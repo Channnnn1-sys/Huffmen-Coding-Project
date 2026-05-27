@@ -1,0 +1,19 @@
+Hello World! This is a test file for the Huffman compression system.
+
+This file contains various characters to demonstrate how Huffman coding
+analyzes character frequency and creates an optimal binary tree.
+
+The quick brown fox jumps over the lazy dog.
+The quick brown fox jumps over the lazy dog.
+The quick brown fox jumps over the lazy dog.
+
+Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+
+Testing numbers: 0123456789 0123456789 0123456789
+Testing special chars: !@#$%^&*()_+-=[]{}|;:,.<>?
+
+Repetition helps compression: aaaaaabbbbbbccccccdddddd
+
+End of test file.

@@ -1,0 +1,53 @@
+services:
+  - type: web
+    name: huffman-compressor
+    runtime: python
+    region: oregon
+
+    buildCommand: |
+      set -e
+      echo "=========================================="
+      echo "Render Build: Huffman Compression App"
+      echo "=========================================="
+
+      echo "1. Checking environment..."
+      echo "   Current directory: $(pwd)"
+      echo "   Files in root: $(ls -la)"
+      echo "   Checking for g++..."
+      which g++ || (echo "ERROR: g++ not found. Installing build-essential..." && apt-get update && apt-get install -y build-essential)
+      g++ --version
+
+      echo ""
+      echo "2. Making compile script executable..."
+      chmod +x compile_linux.sh
+      ls -lh compile_linux.sh
+
+      echo ""
+      echo "3. Running compilation script..."
+      ./compile_linux.sh
+
+      echo ""
+      echo "4. Final verification..."
+      echo "   Compressor directory contents:"
+      ls -lh compressor/
+      echo ""
+      echo "   Binary details:"
+      file compressor/huffcompress || echo "ERROR: huffcompress not found"
+      file compressor/huffdecompress || echo "ERROR: huffdecompress not found"
+      echo ""
+      echo "   Permissions:"
+      ls -l compressor/huffcompress compressor/huffdecompress
+
+      echo ""
+      echo "5. Installing Python dependencies..."
+      pip install -r requirements.txt
+
+      echo ""
+      echo "=========================================="
+      echo "✓ Build completed successfully!"
+      echo "=========================================="
+
+    startCommand: gunicorn -w 4 -b 0.0.0.0:8000 main:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11

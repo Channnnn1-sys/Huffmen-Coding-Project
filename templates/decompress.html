@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Decompress Files - Huffman Compression</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-content">
+            <div class="logo">
+                <i class="fa-solid fa-cube"></i>
+                <span>Huffman</span>
+            </div>
+
+            <nav class="nav-links">
+                <a href="{{ url_for('home') }}" class="nav-item">
+                    <i class="fa-solid fa-house"></i>
+                    <span>Home</span>
+                </a>
+                <a href="{{ url_for('compress') }}" class="nav-item">
+                    <i class="fa-solid fa-file-zipper"></i>
+                    <span>Compress</span>
+                </a>
+                <a href="{{ url_for('decompress') }}" class="nav-item active">
+                    <i class="fa-solid fa-box-open"></i>
+                    <span>Decompress</span>
+                </a>
+                <a href="{{ url_for('about') }}" class="nav-item">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <span>About</span>
+                </a>
+            </nav>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="profile-box">
+                <div class="avatar">HC</div>
+                <div class="profile-info">
+                    <h4>Huffman</h4>
+                    <p>Compression Suite</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="page-header">
+            <h1>Decompress Files</h1>
+            <p>Upload one or more compressed .bin files to restore original data</p>
+        </div>
+
+        <div class="page-content">
+            <!-- Cross-feature Warning -->
+            <div class="cross-feature-warning">
+                <div class="warning-icon">⚠️</div>
+                <div class="warning-text">
+                    <strong>Important:</strong> You should only decompress files that were created using this compression tool. Mismatched files may fail or produce corrupted output.
+                </div>
+            </div>
+
+            <form id="decompress-form" action="{{ url_for('decompress') }}" method="POST" enctype="multipart/form-data">
+                <div class="upload-box" id="upload-box">
+                    <input type="file" id="file-input" name="files" multiple>
+                    <div class="upload-text">
+                        <p id="upload-text-content">Drag and drop files here or click to browse</p>
+                    </div>
+                </div>
+
+                <button id="decompress-btn" type="submit" class="btn secondary big">Decompress Files</button>
+            </form>
+        </div>
+
+        <div id="results-container" class="results-container" style="display: none;">
+            <div class="results-header">
+                <h2>Decompression Results</h2>
+                <button id="clear-results" class="btn secondary small">Clear Results</button>
+            </div>
+            <div id="results-list"></div>
+        </div>
+    </div>
+    </main>
+
+    <button id="theme-toggle" class="theme-btn">
+        <i class="fa-solid fa-moon"></i>
+    </button>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

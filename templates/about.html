@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Us - Huffman Compression</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-content">
+            <div class="logo">
+                <i class="fa-solid fa-cube"></i>
+                <span>Huffman</span>
+            </div>
+
+            <nav class="nav-links">
+                <a href="{{ url_for('home') }}" class="nav-item">
+                    <i class="fa-solid fa-house"></i>
+                    <span>Home</span>
+                </a>
+                <a href="{{ url_for('compress') }}" class="nav-item">
+                    <i class="fa-solid fa-file-zipper"></i>
+                    <span>Compress</span>
+                </a>
+                <a href="{{ url_for('decompress') }}" class="nav-item">
+                    <i class="fa-solid fa-box-open"></i>
+                    <span>Decompress</span>
+                </a>
+                <a href="{{ url_for('about') }}" class="nav-item active">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <span>About</span>
+                </a>
+            </nav>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="profile-box">
+                <div class="avatar">HC</div>
+                <div class="profile-info">
+                    <h4>Huffman</h4>
+                    <p>Compression Suite</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+    <div class="about-container">
+        <header class="about-hero">
+            <h1>About Our Huffman Compression System</h1>
+            <p>
+                A college-focused web application that combines a Flask frontend with C++ Huffman executables
+                to deliver efficient file compression and decompression in a modern browser experience.
+            </p>
+        </header>
+
+        <section class="about-section">
+            <h2>About the Project</h2>
+            <div class="about-grid">
+                <article class="about-card">
+                    <h3>Project Title</h3>
+                    <p>Enhancing Storage Efficiency: A Practical Desktop Application for Lossless Data Compression</p>
+                </article>
+                <article class="about-card">
+                    <h3>Project Overview</h3>
+                    <p>
+                        This system lets users upload files through a web interface, processes them through
+                        compiled C++ Huffman tools, and returns compressed or decompressed outputs for download.
+                    </p>
+                </article>
+                <article class="about-card">
+                    <h3>Main Purpose</h3>
+                    <p>
+                        To demonstrate practical data compression concepts and system integration between
+                        backend web frameworks and high-performance native programs.
+                    </p>
+                </article>
+                <article class="about-card">
+                    <h3>Technologies Used</h3>
+                    <ul>
+                        <li>Flask</li>
+                        <li>Python</li>
+                        <li>C++</li>
+                        <li>Huffman Coding</li>
+                        <li>HTML / CSS </li>
+                    </ul>
+                </article>
+                <article class="about-card">
+                    <h3>Main Features</h3>
+                    <ul>
+                        <li>File compression</li>
+                        <li>File decompression</li>
+                        <li>Multi-file support</li>
+                        <li>Drag-and-drop upload</li>
+                        <li>Modern web interface</li>
+                    </ul>
+                </article>
+                <article class="about-card">
+                    <h3>Educational Purpose</h3>
+                    <p>
+                        This project is intended for educational and research use, helping students understand
+                        algorithm design, systems programming, and practical web deployment workflows.
+                    </p>
+                </article>
+                <article class="about-card about-wide">
+                    <h3>What is Huffman Coding?</h3>
+                    <p>
+                        Huffman coding is a lossless compression technique that assigns shorter binary codes to
+                        frequently occurring characters and longer codes to less frequent ones. This reduces
+                        overall file size while preserving the exact original data for perfect restoration.
+                    </p>
+                </article>
+            </div>
+        </section>
+
+        <section class="about-section">
+            <h2>About the Creators</h2>
+            <div class="creator-grid">
+                <article class="creator-card">
+                    <div class="creator-avatar">NK</div>
+                    <h3>Nikko Madueño</h3>
+                    <p class="role">QA & Testing Specialist</p>
+                    <p>Responsible for testing system functionality and ensuring reliability across different inputs.</p>
+                </article>
+                <article class="creator-card">
+                    <div class="creator-avatar">ACM</div>
+                    <h3>Arman Christian Malgapo</h3>
+                    <p class="role">Lead Developer</p>
+                    <p>Designed and implemented the core system and Flask-C++ integration.</p>
+                </article>
+                <article class="creator-card">
+                    <div class="creator-avatar">PHM</div>
+                    <h3>Paul Henrick Maquiniana</h3>
+                    <p class="role">Project Coordinator</p>
+                    <p>Organized development process and managed team collaboration.</p>
+                </article>
+                <article class="creator-card">
+                    <div class="creator-avatar">TMN</div>
+                    <h3>Theo Masato Nakajima</h3>
+                    <p class="role">Documentation Specialist</p>
+                    <p>Prepared technical documentation and research references.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="about-section">
+            <h2>Mission and Project Goals</h2>
+            <div class="about-grid">
+                <article class="about-card">
+                    <h3>Mission</h3>
+                    <p>Build a practical, understandable, and reliable compression platform for student learning and demonstrations.</p>
+                </article>
+                <article class="about-card">
+                    <h3>Development Journey</h3>
+                    <p>Started as an algorithm-focused build, then evolved into a user-friendly web application with multi-file support.</p>
+                </article>
+                <article class="about-card">
+                    <h3>Contact & Information</h3>
+                    <p>This is an educational project developed as part of coursework in data structures and algorithms.</p>
+                </article>
+                <article class="about-card about-wide">
+                    <h3>Acknowledgements</h3>
+                    <p>We acknowledge our instructors, classmates, and open-source communities that helped guide our development process.</p>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <button id="theme-toggle" class="theme-btn">
+        <i class="fa-solid fa-moon"></i>
+    </button>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
