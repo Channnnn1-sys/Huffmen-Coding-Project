@@ -1,147 +1,124 @@
 # Huffman File Compression Web Application
 
-A Flask-based web application that combines a Python backend with C++ Huffman coding algorithms to provide file compression and decompression functionality through an intuitive web interface.
+A Flask-based web application that combines a Python backend with a C++ Huffman coding compressor to provide file compression and decompression via a simple web UI.
 
-## Project Overview
+## Overview
 
-This project demonstrates practical integration of:
-- **Frontend**: HTML, CSS, JavaScript with modern responsive design
-- **Backend**: Python Flask web framework
-- **Compression Engine**: C++ Huffman coding implementation
-- **Features**: Multi-file upload, batch processing, drag-and-drop UI, real-time results
+This repository implements a stateless Flask service that uses an external C++ Huffman compressor/decompressor to process files in temporary session directories and return results to the browser as base64 payloads. It is designed for local development and cloud deployment (Render, generic Linux hosts).
 
-### Key Features
+### Features
 
-- ✅ **Compress Files**: Reduce file sizes using Huffman coding algorithm
-- ✅ **Decompress Files**: Restore original files from compressed `.bin` format
-- ✅ **Batch Processing**: Upload and process multiple files at once
-- ✅ **Advanced Document Support**: `.txt`, `.csv`, `.log`, `.json`, `.xml`, `.doc`, `.docx`, `.ppt`, `.pptx`, `.xlsx`, `.pdf`
-- ✅ **Office Deep Scan Mode**: Text/XML analysis for ZIP-based Office containers
-- ✅ **Entropy Awareness**: Intelligent guidance for already-compressed or high-entropy files
-- ✅ **Drag-and-Drop**: User-friendly file upload interface
-- ✅ **Real-Time Results**: Immediate compression ratios and statistics
-- ✅ **Responsive Design**: Works on desktop, tablet, and mobile devices
-- ✅ **Theme Support**: Dark and light mode toggle
-- ✅ **Educational Focus**: Clean code structure for learning
+- Compress and decompress files with a C++ Huffman engine
+- Batch uploads (multiple files per request)
+- Client-side download via base64 JSON responses (no persistent server storage)
+- Office ZIP deep-scan analysis for text-heavy Office files
+- Entropy analysis and compression statistics (ratio, top symbols, efficiency)
+- Simple responsive UI (templates in `templates/`)
 
-## What is Huffman Coding?
+## Tech stack
 
-Huffman coding is a lossless data compression algorithm that:
-1. Analyzes character frequency in a file
-2. Creates a binary tree based on frequency distribution
-3. Assigns shorter binary codes to frequent characters
-4. Assigns longer codes to less frequent characters
-5. Encodes the file with these optimized codes
+- Python 3.8+ with Flask (web framework)
+- C++ (Huffman compressor/decompressor in `compressor/`)
+- HTML/CSS/JavaScript front end (templates + static assets)
+- Gunicorn for production WSGI hosting
+- Designed for Linux, macOS, and Windows
 
-**Result**: Reduced file size while preserving exact original data for perfect restoration.
+## Architecture
 
-## Project Structure
+Requests are processed in a temporary session directory created with `tempfile.TemporaryDirectory()`. Uploaded files are saved there, the C++ binary is invoked in that directory, outputs are read into memory, base64-encoded and returned to the client. Temporary directories are removed automatically.
 
-```
-huffman-compression/
-├── main.py                    # Flask application (main entry point)
-├── requirements.txt           # Python dependencies
-├── README.md                  # This file
-├── .gitignore                 # Git ignore rules
-│
-├── compressor/                # C++ compression engine
-│   ├── huffcompress.cpp       # Compression implementation
-│   ├── huffdecompress.cpp     # Decompression implementation
-│   ├── huffcompress.exe       # Compiled compressor (Windows)
-│   └── huffdecompress.exe     # Compiled decompressor (Windows)
-│
-├── templates/                 # HTML templates
-│   ├── index.html             # Home page
-│   ├── compress.html          # Compression page
-│   ├── decompress.html        # Decompression page
-│   └── about.html             # About page
-│
-├── static/                    # Static assets
-│   ├── css/
-│   │   └── style.css          # Main stylesheet
-│   ├── js/                    # JavaScript files (if added)
-│   └── assets/                # Additional assets (images, etc.)
-│
-├── uploads/                   # Temporary storage for uploaded files
-├── downloads/                 # Output files for download
-├── temp/                      # Temporary processing files
-└── tests/                     # Test files and samples
-```
+Key routes:
 
-## Installation & Setup
+- `GET /` - Home (`templates/index.html`)
+- `GET/POST /compress` - Compress files
+- `GET/POST /decompress` - Decompress `.bin` files
+- `GET /about` - About page
+- `GET /debug` - Debug info (environment, binaries)
 
-### Prerequisites
+## Installation
 
-- **Python 3.8+** (with pip)
-- **C++ Compiler** (g++ or Visual Studio)
-- **Windows** (optimized for Windows; Linux/macOS may require adjustments)
-
-### Step 1: Clone or Download the Project
+1. Clone the repo and create a Python environment
 
 ```bash
-cd huffman-compression
-```
-
-### Step 2: Install Python Dependencies
-
-```bash
+git clone <repo>
+cd File-Compression-Using-Huffman-Coding-Flask-App-main
+python -m venv .venv
+source .venv/bin/activate  # or .venv\\Scripts\\activate on Windows
 pip install -r requirements.txt
 ```
 
-### Step 3: Build C++ Compressor and Decompressor
-
-Navigate to the `compressor` directory and compile the C++ files:
-
-**Windows (Command Prompt or PowerShell):**
+2. Build C++ binaries
 
 ```bash
-cd compressor
-g++ -O2 -o huffcompress.exe huffcompress.cpp
-g++ -O2 -o huffdecompress.exe huffdecompress.cpp
-cd ..
+# Linux/macOS
+./build.sh
+
+# Windows
+build.bat
 ```
 
-**Linux/macOS:**
-
-```bash
-cd compressor
-g++ -O2 -o huffcompress huffcompress.cpp
-g++ -O2 -o huffdecompress huffdecompress.cpp
-cd ..
-```
-
-**Verification**: You should see `huffcompress.exe` and `huffdecompress.exe` in the `compressor/` directory.
-
-### Step 4: Run the Application
+3. Run locally
 
 ```bash
 python main.py
 ```
 
-You should see output like:
+For full deployment instructions see `DEPLOYMENT.md` and `QUICKSTART.md`.
 
-```
-============================================================
-Huffman File Compression Web Application
-============================================================
-Base Directory: C:\path\to\huffman-compression
-Compressor: C:\path\to\huffman-compression\compressor\huffcompress.exe
-Decompressor: C:\path\to\huffman-compression\compressor\huffdecompress.exe
-============================================================
-Starting Flask application...
-Visit: http://localhost:5000
-============================================================
-```
+## Usage
 
-### Step 5: Access the Application
+Open `http://localhost:5000` and use the web UI to compress or decompress files. Uploaded files are processed in a temporary session and returned as base64 payloads; the browser will trigger downloads.
 
-Open your web browser and navigate to:
+API examples (curl):
 
-```
-http://localhost:5000
+```bash
+# Compress
+curl -X POST http://localhost:5000/compress -F "files=@myfile.txt"
+
+# Decompress
+curl -X POST http://localhost:5000/decompress -F "files=@myfile-compressed.bin"
 ```
 
-You should see the home page with options to compress or decompress files.
+## Project structure
+
+Relevant files and folders:
+
+```
+main.py                # Flask application (entry point)
+requirements.txt       # Python dependencies
+compressor/            # C++ source and compiled binaries
+templates/             # HTML templates (index, compress, decompress, about)
+static/                # CSS and JS assets
+build.sh / build.bat   # Platform build scripts for the C++ binaries
+render.yaml            # Render deployment configuration
+```
+
+Configuration is primarily controlled in `main.py` (upload size, allowed extensions).
+
+## Limitations
+
+- Processing is currently sequential (no worker pool per request); large batches are processed file-by-file.
+- Base64 payloads increase memory usage by ~33% while data is held in memory
+- Large files (>~500MB) may cause memory or timeout issues depending on host
+
+See `DEPLOYMENT.md` for deployment-specific considerations and tuning (timeouts, gunicorn worker count).
+
+## Future improvements
+
+- Add optional worker pool / parallel processing for batch jobs
+- Stream large file transfers to avoid full in-memory base64 for very large files
+- Add automated tests and CI (unit + integration) covering compress/decompress flows
+- Provide a Dockerfile and containerized build image for consistent deployment
+- Add monitoring, rate limiting and authentication for production deployments
+
+## Credits
+
+- Project implemented using Flask and a C++ Huffman compressor
+- Third-party libraries: Flask, Werkzeug, Gunicorn
+
+---
+
+For more detailed deployment steps and troubleshooting see `DEPLOYMENT.md` and `QUICKSTART.md`.
 
 ## Usage Guide
 
