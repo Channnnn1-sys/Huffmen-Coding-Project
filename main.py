@@ -1,28 +1,28 @@
 """
 Huffman File Compression Web Application
-A Flask-based web application for file compression/decompression using Huffman coding.
-Supports batch processing of multiple files with drag-and-drop upload UI.
-Cloud-native stateless implementation for Render/Linux deployment.
+
+This Flask app teaches file compression with a C++ Huffman engine.
+It keeps the server stateless by processing uploads in temporary directories,
+returning results as base64 payloads, and cleaning up immediately.
 """
 
-import os
-import sys
-import io
-import re
-import zipfile
+import base64
+import json
 import logging
+import os
+import platform
+import re
 import subprocess
 import tempfile
-import platform
-from pathlib import Path
-from datetime import datetime
-from uuid import uuid4
+import zipfile
 from collections import Counter
+from datetime import datetime
 from math import log2
-import json
-import base64
+from pathlib import Path
+from uuid import uuid4
+
+from flask import Flask, jsonify, render_template, request
 from werkzeug.utils import secure_filename
-from flask import Flask, render_template, request, send_file, jsonify
 
 # ============================================================================
 # LOGGING CONFIGURATION
@@ -121,7 +121,8 @@ def allowed_file(filename, operation="compress"):
 
 
 def get_extension(filename):
-    return filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+    """Return the normalized file extension without a leading dot."""
+    return Path(filename).suffix.lstrip('.').lower()
 
 
 def compute_entropy(byte_sequence):
@@ -311,10 +312,6 @@ def make_entropy_warning(filename, entropy):
     return " ".join(warnings) if warnings else None
 
 
-def format_warning_text(warning):
-    return warning if warning else ""
-
-
 def safe_compressed_filename(filename):
     if filename.endswith(COMPRESSED_SUFFIX):
         return filename
@@ -322,16 +319,8 @@ def safe_compressed_filename(filename):
     return f"{base}{COMPRESSED_SUFFIX}"
 
 
-def safe_decompressed_filename(filename, extension=""):
-    base = filename
-    if filename.endswith(COMPRESSED_SUFFIX):
-        base = filename[:-len(COMPRESSED_SUFFIX)]
-    elif filename.lower().endswith('.bin'):
-        base = filename[:-4]
-    return f"{base}-decompressed{extension}"
-
-
 def maybe_timeout_for_size(filesize):
+    """Choose a timeout window based on file size."""
     if filesize > 50 * 1024 * 1024:
         return 120
     if filesize > 10 * 1024 * 1024:
@@ -339,59 +328,89 @@ def maybe_timeout_for_size(filesize):
     return 30
 
 
+def save_uploaded_file(file_storage, target_dir, filename=None):
+    """Persist an uploaded file in the temporary session directory."""
+    safe_name = secure_filename(filename or file_storage.filename)
+    if not safe_name:
+        raise ValueError("Uploaded file must have a filename")
+
+    saved_path = target_dir / safe_name
+    file_storage.save(str(saved_path))
+    return saved_path
+
+
+def build_response_archive_bytes(content_bytes, inner_filename, archive_name, metadata, target_dir):
+    """Create a ZIP archive in temporary storage and return its base64 payload."""
+    archive_path = target_dir / archive_name
+    with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(inner_filename, content_bytes)
+        archive.writestr('metadata.json', json.dumps(metadata))
+    return base64.b64encode(archive_path.read_bytes()).decode()
+
+
+def extract_compressed_bin_from_zip(zip_path, target_dir):
+    """Extract the first supported compressed binary from a ZIP upload safely."""
+    try:
+        with zipfile.ZipFile(zip_path, 'r') as archive:
+            for info in archive.infolist():
+                candidate_name = Path(info.filename).name
+                if candidate_name.endswith('-compressed.bin') or candidate_name.lower().endswith('.bin'):
+                    safe_name = secure_filename(candidate_name)
+                    if not safe_name:
+                        continue
+
+                    extracted_path = target_dir / safe_name
+                    with archive.open(info, 'r') as source, open(extracted_path, 'wb') as target:
+                        target.write(source.read())
+                    return extracted_path
+    except zipfile.BadZipFile:
+        return None
+    return None
+
+
 def run_compressor(input_file, exe_path, output_dir, timeout=30):
     """
-    Execute compressor/decompressor with comprehensive error handling and logging.
-    Uses temporary directory and returns output file path.
-    
+    Execute the Huffman compressor or decompressor and resolve the generated output.
+
+    This function keeps the backend isolated from binary details. It:
+    1. Validates the executable exists
+    2. Ensures Unix binaries are runnable
+    3. Runs the compressor or decompressor
+    4. Finds the generated output file in the temporary session directory
+
     Args:
-        input_file: Path to input file
-        exe_path: Path to executable (huffcompress or huffdecompress)
-        output_dir: Temporary directory to store output
-        timeout: Process timeout in seconds
-        
+        input_file: Path object for the saved upload
+        exe_path: Path object for the compressor executable
+        output_dir: Temporary directory path where output files are written
+        timeout: Maximum seconds to wait for the subprocess
+
     Returns:
-        (success: bool, output_file: Path|None, error_message: str|None)
+        A tuple of (success, output_path, error_message).
     """
-    operation = "compress" if "compress" in exe_path.name.lower() and "decompress" not in exe_path.name.lower() else "decompress"
-    
-    logger.info(f"Starting {operation} operation")
-    logger.info(f"  Input file: {input_file}")
-    logger.info(f"  Input file size: {input_file.stat().st_size if input_file.exists() else 'N/A'} bytes")
-    logger.info(f"  Executable: {exe_path}")
-    logger.info(f"  Executable exists: {exe_path.exists()}")
-    logger.info(f"  Output directory: {output_dir}")
-    logger.info(f"  Current working directory: {os.getcwd()}")
-    
+    operation = 'compress' if exe_path.name.lower().startswith('huffcompress') else 'decompress'
+
+    logger.info("Starting %s operation", operation)
+    logger.info("  Input file: %s", input_file)
+    logger.info("  Executable: %s", exe_path)
+    logger.info("  Output directory: %s", output_dir)
+
+    if not exe_path.exists() or not exe_path.is_file():
+        error_msg = f"Compressor binary not found at: {exe_path}"
+        logger.error(error_msg)
+        return False, None, error_msg
+
+    if not input_file.exists():
+        error_msg = f"Input file not found: {input_file}"
+        logger.error(error_msg)
+        return False, None, error_msg
+
+    if platform.system() != 'Windows':
+        try:
+            os.chmod(exe_path, 0o755)
+        except Exception as exc:
+            logger.warning("Could not set executable permission: %s", exc)
+
     try:
-        # Check if executable exists
-        if not exe_path.exists():
-            error_msg = (
-                f"Compressor binary not found at: {exe_path}\n"
-                f"Platform: {platform.system()}\n"
-                f"Compressor directory contents: {list(COMPRESSOR_DIR.glob('*'))}"
-            )
-            logger.error(error_msg)
-            return False, None, error_msg
-        
-        # Verify input file exists
-        if not input_file.exists():
-            error_msg = f"Input file not found: {input_file}"
-            logger.error(error_msg)
-            return False, None, error_msg
-        
-        # Make executable on Unix systems
-        if platform.system() != "Windows":
-            try:
-                current_mode = exe_path.stat().st_mode
-                logger.info(f"  Executable current permissions: {oct(current_mode)}")
-                os.chmod(exe_path, 0o755)
-                logger.info(f"  Executable permissions set to: 0o755")
-            except Exception as e:
-                logger.warning(f"Could not set executable permissions: {e}")
-        
-        # Run subprocess with proper error handling
-        logger.info(f"Running command: {exe_path} {input_file}")
         result = subprocess.run(
             [str(exe_path), str(input_file)],
             capture_output=True,
@@ -400,75 +419,48 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
             cwd=str(output_dir)
         )
 
-        logger.info(f"  Return code: {result.returncode}")
+        logger.info("Process return code: %s", result.returncode)
         if result.stdout:
-            logger.info(f"  Stdout: {result.stdout[:200]}")
+            logger.info("Process stdout: %s", result.stdout[:200])
         if result.stderr:
-            logger.warning(f"  Stderr: {result.stderr[:200]}")
+            logger.warning("Process stderr: %s", result.stderr[:200])
 
         if result.returncode != 0:
-            error_msg = result.stderr.strip() if result.stderr else (result.stdout.strip() or "Unknown error")
-            error_full = (
-                f"Compressor returned error code {result.returncode}:\n"
-                f"  Error: {error_msg}\n"
-                f"  Command: {exe_path} {input_file}\n"
-                f"  Working directory: {output_dir}"
-            )
-            logger.error(error_full)
-            return False, None, error_full
+            error_msg = result.stderr.strip() or result.stdout.strip() or 'Unknown error'
+            logger.error("Binary failed: %s", error_msg)
+            return False, None, error_msg
 
-        # Determine output filename based on operation
-        if operation == "compress":
-            # Compression: input_file -> input_file-compressed.bin
+        if operation == 'compress':
             expected_output = input_file.parent / f"{input_file.stem}-compressed.bin"
-            logger.info(f"  Expected output file: {expected_output.name}")
         else:
-            # Decompression: output depends on original extension (embedded in .bin)
-            # Expected pattern: input_file-decompressed.EXT
-            base_name = input_file.stem.replace("-compressed", "")
+            base_name = input_file.stem.replace('-compressed', '')
             expected_output = None
-            
-            # Search for decompressed output file
-            logger.info(f"  Searching for decompressed output file with base name: {base_name}")
             for candidate in output_dir.iterdir():
-                if candidate.is_file() and candidate.name.startswith(base_name + "-decompressed"):
+                if candidate.is_file() and candidate.name.startswith(f"{base_name}-decompressed"):
                     expected_output = candidate
-                    logger.info(f"  Found decompressed file: {candidate.name}")
                     break
-            
             if expected_output is None:
-                files_in_dir = [f.name for f in output_dir.iterdir() if f.is_file()]
-                error_msg = (
-                    f"Decompressed output file not found for input: {input_file.name}\n"
-                    f"  Base name: {base_name}\n"
-                    f"  Files in output directory: {files_in_dir}"
-                )
+                error_msg = f"Decompressed output file not found for input: {input_file.name}"
                 logger.error(error_msg)
                 return False, None, error_msg
 
         if expected_output.exists():
-            output_size = expected_output.stat().st_size
-            logger.info(f"  ✓ {operation.capitalize()} successful: {expected_output.name} ({output_size} bytes)")
             return True, expected_output, None
-        else:
-            error_msg = (
-                f"Output file not found after {operation}: {expected_output.name}\n"
-                f"  Expected path: {expected_output}\n"
-                f"  Files in output directory: {list(output_dir.glob('*'))}"
-            )
-            logger.error(error_msg)
-            return False, None, error_msg
+
+        error_msg = f"Expected output file was not created: {expected_output}"
+        logger.error(error_msg)
+        return False, None, error_msg
 
     except subprocess.TimeoutExpired:
         error_msg = f"Compression timeout after {timeout} seconds"
         logger.error(error_msg)
         return False, None, error_msg
-    except FileNotFoundError as e:
-        error_msg = f"Executable not found: {str(e)}"
+    except FileNotFoundError as exc:
+        error_msg = f"Executable not found: {exc}"
         logger.error(error_msg)
         return False, None, error_msg
-    except Exception as e:
-        error_msg = f"Unexpected error during {operation}: {str(e)}"
+    except Exception as exc:
+        error_msg = f"Unexpected error during {operation}: {exc}"
         logger.error(error_msg, exc_info=True)
         return False, None, error_msg
 
@@ -487,15 +479,14 @@ def home():
 def compress():
     """
     Handle file compression requests.
-    GET: Render compression form
-    POST: Process uploaded files and stream results without persistent storage
-    
-    Returns JSON with download URLs for each compressed file.
+
+    GET: render the compression page.
+    POST: save uploads in a temporary session, compress each file with the C++ engine,
+    and return a JSON payload containing base64 ZIP archives for download.
     """
     if request.method == "GET":
         return render_template("compress.html")
 
-    # POST request - process files
     logger.info("POST /compress received request")
     if "files" not in request.files:
         logger.warning("POST /compress missing files field")
@@ -503,44 +494,37 @@ def compress():
 
     files = request.files.getlist("files")
     logger.info("POST /compress received %d file(s)", len(files))
-    if not files or len(files) == 0:
+    if not files:
         return jsonify({"error": "No files selected"}), 400
 
-    # Generate unique job ID
     job_id = generate_job_id()
     results = []
 
-    # Create a temporary directory for this batch of operations
     with tempfile.TemporaryDirectory() as temp_session_dir:
         temp_session_path = Path(temp_session_dir)
 
-        for file in files:
-            if file.filename == "":
+        for uploaded_file in files:
+            if not uploaded_file.filename:
                 continue
 
-            if not allowed_file(file.filename, "compress"):
+            filename = secure_filename(uploaded_file.filename)
+            if not allowed_file(filename, "compress"):
                 results.append({
-                    "filename": file.filename,
+                    "filename": uploaded_file.filename,
                     "success": False,
                     "error": "Unsupported file type. Please upload a valid file."
                 })
                 continue
 
-            filename = secure_filename(file.filename)
-            temp_input_path = temp_session_path / filename
-            
             try:
                 start_time = datetime.now()
-                # Save uploaded file temporarily
-                file.save(str(temp_input_path))
+                temp_input_path = save_uploaded_file(uploaded_file, temp_session_path, filename)
 
                 original_size = temp_input_path.stat().st_size
-                sample_bytes = sample_file_bytes(temp_input_path)
-                entropy_value = compute_entropy(sample_bytes)
+                entropy_value = compute_entropy(sample_file_bytes(temp_input_path))
                 entropy_warning = make_entropy_warning(filename, entropy_value)
                 office_scan = analyze_office_archive(temp_input_path)
 
-                # Run compression with a timeout adapted to file size
                 timeout = maybe_timeout_for_size(original_size)
                 success, output_file, error = run_compressor(
                     temp_input_path,
@@ -557,17 +541,11 @@ def compress():
                     })
                     continue
 
-                # Read compressed file into memory
-                with open(output_file, "rb") as f:
-                    compressed_data = f.read()
-
-                compressed_size = len(compressed_data)
+                compressed_data = output_file.read_bytes()
+                report = create_compression_report(temp_input_path, len(compressed_data))
                 processing_time = (datetime.now() - start_time).total_seconds()
-                report = create_compression_report(temp_input_path, compressed_size)
 
-                # Create ZIP containing compressed data and metadata
                 zip_name = f"{temp_input_path.stem}-compressed.zip"
-                zip_path = temp_session_path / zip_name
                 metadata = {
                     "algorithm": "huffman",
                     "original_filename": filename,
@@ -576,46 +554,39 @@ def compress():
                     "compressed_size": report["compressed_size"],
                     "timestamp": datetime.now().isoformat()
                 }
-                try:
-                    with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-                        zf.writestr(output_file.name, compressed_data)
-                        zf.writestr('metadata.json', json.dumps(metadata))
+                data_b64 = build_response_archive_bytes(
+                    compressed_data,
+                    output_file.name,
+                    zip_name,
+                    metadata,
+                    temp_session_path
+                )
 
-                    with open(zip_path, 'rb') as zf:
-                        zip_bytes = zf.read()
+                results.append({
+                    "filename": filename,
+                    "success": True,
+                    "compressed_filename": zip_name,
+                    "original_size": report["original_size"],
+                    "compressed_size": report["compressed_size"],
+                    "compression_ratio": report["compression_ratio"],
+                    "saved_bytes": report["saved_bytes"],
+                    "entropy": report["entropy"],
+                    "entropy_warning": report["entropy_warning"] or entropy_warning,
+                    "average_bits_per_symbol": report["average_bits_per_symbol"],
+                    "efficiency_vs_8bit": report["efficiency_vs_8bit"],
+                    "top_symbols": report["top_symbols"],
+                    "file_type": report["file_type"],
+                    "deep_scan": office_scan,
+                    "processing_time_seconds": round(processing_time, 3),
+                    "data_b64": data_b64
+                })
 
-                    results.append({
-                        "filename": filename,
-                        "success": True,
-                        "compressed_filename": zip_name,
-                        "original_size": report["original_size"],
-                        "compressed_size": report["compressed_size"],
-                        "compression_ratio": report["compression_ratio"],
-                        "saved_bytes": report["saved_bytes"],
-                        "entropy": report["entropy"],
-                        "entropy_warning": report["entropy_warning"] or entropy_warning,
-                        "average_bits_per_symbol": report["average_bits_per_symbol"],
-                        "efficiency_vs_8bit": report["efficiency_vs_8bit"],
-                        "top_symbols": report["top_symbols"],
-                        "file_type": report["file_type"],
-                        "deep_scan": office_scan,
-                        "processing_time_seconds": round(processing_time, 3),
-                        "data_b64": base64.b64encode(zip_bytes).decode()
-                    })
-                except Exception as e:
-                    logger.exception("Failed to create ZIP for compressed output")
-                    results.append({
-                        "filename": filename,
-                        "success": False,
-                        "error": f"Failed to create ZIP: {e}"
-                    })
-
-            except Exception as e:
+            except Exception as exc:
                 logger.exception("Unexpected error during compression")
                 results.append({
                     "filename": filename,
                     "success": False,
-                    "error": str(e)
+                    "error": str(exc)
                 })
 
     return jsonify({
@@ -634,10 +605,10 @@ def generate_job_id():
 def decompress():
     """
     Handle file decompression requests.
-    GET: Render decompression form
-    POST: Process uploaded .bin files and stream results without persistent storage
 
-    Returns JSON with download URLs for each decompressed file.
+    GET: render the decompression page.
+    POST: save uploads, extract valid compressed binaries, run the C++ decompressor,
+    and return base64 ZIP archives with restored files.
     """
     if request.method == "GET":
         return render_template("decompress.html")
@@ -649,74 +620,47 @@ def decompress():
 
     files = request.files.getlist("files")
     logger.info("POST /decompress received %d file(s)", len(files))
-    if not files or len(files) == 0:
+    if not files:
         return jsonify({"error": "No files selected"}), 400
 
-    # Generate unique job ID
     job_id = generate_job_id()
     results = []
 
-    # Create a temporary directory for this batch of operations
     with tempfile.TemporaryDirectory() as temp_session_dir:
         temp_session_path = Path(temp_session_dir)
 
-        for file in files:
-            if file.filename == "":
+        for uploaded_file in files:
+            if not uploaded_file.filename:
                 continue
 
-            filename = secure_filename(file.filename)
-
-            if not allowed_file(file.filename, "decompress"):
+            filename = secure_filename(uploaded_file.filename)
+            if not allowed_file(filename, "decompress"):
                 results.append({
-                    "filename": file.filename,
+                    "filename": uploaded_file.filename,
                     "success": False,
                     "error": "Unsupported file type. Please upload a valid .bin file generated by this tool."
                 })
                 continue
 
-            # Save uploaded file temporarily (support .zip containing compressed .bin)
-            temp_upload_path = temp_session_path / filename
-
             try:
                 start_time = datetime.now()
-                # Save uploaded file temporarily
-                file.save(str(temp_upload_path))
+                temp_upload_path = save_uploaded_file(uploaded_file, temp_session_path, filename)
 
-                # If uploaded ZIP, extract contained compressed .bin
-                ext = get_extension(filename)
-                if ext == 'zip':
-                    try:
-                        with zipfile.ZipFile(temp_upload_path, 'r') as zf:
-                            candidate = None
-                            for info in zf.infolist():
-                                if info.filename.endswith('-compressed.bin') or info.filename.lower().endswith('.bin'):
-                                    candidate = info.filename
-                                    break
-                            if candidate is None:
-                                results.append({
-                                    "filename": filename,
-                                    "success": False,
-                                    "error": "No compressed .bin file found inside uploaded ZIP"
-                                })
-                                continue
-
-                            zf.extract(candidate, path=str(temp_session_path))
-                            temp_input_path = temp_session_path / candidate
-                    except zipfile.BadZipFile:
+                if get_extension(filename) == 'zip':
+                    temp_input_path = extract_compressed_bin_from_zip(temp_upload_path, temp_session_path)
+                    if not temp_input_path:
                         results.append({
                             "filename": filename,
                             "success": False,
-                            "error": "Uploaded ZIP is invalid or corrupted"
+                            "error": "No compressed .bin file found inside uploaded ZIP or ZIP is invalid."
                         })
                         continue
                 else:
-                    # Ensure the decompressor sees a safe compressed filename
                     safe_filename = safe_compressed_filename(filename)
                     temp_input_path = temp_session_path / safe_filename
-                    if temp_upload_path.exists() and temp_upload_path.name != temp_input_path.name:
+                    if temp_upload_path.name != temp_input_path.name:
                         temp_upload_path.rename(temp_input_path)
 
-                # Run decompression with a timeout adapted to the uploaded file size
                 timeout = maybe_timeout_for_size(temp_input_path.stat().st_size)
                 success, output_file, error = run_compressor(
                     temp_input_path,
@@ -733,18 +677,12 @@ def decompress():
                     })
                     continue
 
-                # Read decompressed file into memory
-                with open(output_file, "rb") as f:
-                    decompressed_data = f.read()
-
-                # Get file sizes
+                decompressed_data = output_file.read_bytes()
                 compressed_size = temp_input_path.stat().st_size
                 decompressed_size = len(decompressed_data)
                 processing_time = (datetime.now() - start_time).total_seconds()
 
-                # Create ZIP containing decompressed data and metadata
-                zip_name = f"{Path(output_file).stem}-decompressed.zip"
-                zip_path = temp_session_path / zip_name
+                zip_name = f"{output_file.stem}-decompressed.zip"
                 metadata = {
                     "algorithm": "huffman",
                     "original_compressed": filename,
@@ -753,36 +691,30 @@ def decompress():
                     "decompressed_size": decompressed_size,
                     "timestamp": datetime.now().isoformat()
                 }
-                try:
-                    with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-                        zf.writestr(output_file.name, decompressed_data)
-                        zf.writestr('metadata.json', json.dumps(metadata))
+                data_b64 = build_response_archive_bytes(
+                    decompressed_data,
+                    output_file.name,
+                    zip_name,
+                    metadata,
+                    temp_session_path
+                )
 
-                    with open(zip_path, 'rb') as zf:
-                        zip_bytes = zf.read()
+                results.append({
+                    "filename": filename,
+                    "success": True,
+                    "decompressed_filename": zip_name,
+                    "compressed_size": compressed_size,
+                    "decompressed_size": decompressed_size,
+                    "processing_time_seconds": round(processing_time, 3),
+                    "data_b64": data_b64
+                })
 
-                    results.append({
-                        "filename": filename,
-                        "success": True,
-                        "decompressed_filename": zip_name,
-                        "compressed_size": compressed_size,
-                        "decompressed_size": decompressed_size,
-                        "processing_time_seconds": round(processing_time, 3),
-                        "data_b64": base64.b64encode(zip_bytes).decode()
-                    })
-                except Exception as e:
-                    logger.exception("Failed to create ZIP for decompressed output")
-                    results.append({
-                        "filename": filename,
-                        "success": False,
-                        "error": f"Failed to create ZIP: {e}"
-                    })
-
-            except Exception as e:
+            except Exception as exc:
+                logger.exception("Unexpected error during decompression")
                 results.append({
                     "filename": filename,
                     "success": False,
-                    "error": str(e)
+                    "error": str(exc)
                 })
 
     return jsonify({
