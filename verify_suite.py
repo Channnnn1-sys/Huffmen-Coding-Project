@@ -1,15 +1,22 @@
+"""#* Huffman Compression Verification Suite
+#* Tests compress -> decompress round-trip integrity
+#! Validates that decompressed files match originals byte-for-byte
+"""
+
 import base64, json, urllib.request, uuid, zipfile, hashlib, sys
 from pathlib import Path
 
+#* Setup test directory
 root = Path('tests')
 root.mkdir(exist_ok=True)
 
-# Ensure sample.png is valid PNG bytes
+#* Ensure sample.png is valid PNG bytes
 png_b64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMA AAsJTYQAAAAASUVORK5CYII='
 png_b64 = png_b64.replace(' ', '')
 if (root / 'sample.png').stat().st_size == 0:
     (root / 'sample.png').write_bytes(base64.b64decode(png_b64))
 
+#* Test file list - variety of file types for comprehensive testing
 tests = [
     'sample.txt',
     'sample.csv',
@@ -18,9 +25,11 @@ tests = [
     'file with spaces.txt'
 ]
 
+#* Server endpoints
 URL_COMPRESS = 'http://127.0.0.1:5000/compress'
 URL_DECOMPRESS = 'http://127.0.0.1:5000/decompress'
 
+#* Prepare multipart form data boundary
 boundary = '----WebKitFormBoundary' + uuid.uuid4().hex
 headers = {'Content-Type': f'multipart/form-data; boundary={boundary}'}
 
@@ -36,7 +45,7 @@ for name in tests:
     orig_hash = hashlib.sha256(orig_bytes).hexdigest()
     print('\nTEST', name, 'orig_sha256', orig_hash)
 
-    # build multipart for compress
+    #* Build multipart request for compression
     lines = []
     lines.append(f'--{boundary}')
     lines.append(f'Content-Disposition: form-data; name="files"; filename="{name}"')
@@ -47,6 +56,7 @@ for name in tests:
     lines.append('')
     body = '\r\n'.join(lines).encode('latin-1')
 
+    #! Send compression request
     req = urllib.request.Request(URL_COMPRESS, data=body, headers=headers)
     try:
         resp = urllib.request.urlopen(req, timeout=60)
@@ -66,7 +76,7 @@ for name in tests:
     zip_path.write_bytes(base64.b64decode(zip_b64))
     print('compressed zip', zip_path)
 
-    # send zip to decompress
+    #* Send decompression request
     lines = []
     lines.append(f'--{boundary}')
     lines.append(f'Content-Disposition: form-data; name="files"; filename="{zip_name}"')
@@ -77,6 +87,7 @@ for name in tests:
     lines.append('')
     body = '\r\n'.join(lines).encode('latin-1')
 
+    #! Send decompression request
     req = urllib.request.Request(URL_DECOMPRESS, data=body, headers=headers)
     try:
         resp = urllib.request.urlopen(req, timeout=60)
@@ -96,6 +107,7 @@ for name in tests:
     out_path.write_bytes(base64.b64decode(out_b64))
     print('decompressed zip', out_path)
 
+    #! Extract decompressed file and verify integrity
     with zipfile.ZipFile(out_path, 'r') as zf:
         members = [m for m in zf.namelist() if m != 'metadata.json']
         if not members:
@@ -106,11 +118,13 @@ for name in tests:
     restored_bytes = Path(extracted).read_bytes()
     restored_hash = hashlib.sha256(restored_bytes).hexdigest()
     print('restored_sha256', restored_hash)
+    #! Verify hashes match exactly
     ok = orig_hash == restored_hash
     print('PASS' if ok else 'FAIL')
     if not ok:
         all_ok = False
 
+#! Report test results
 print('\nSUMMARY OK=' + str(all_ok))
 if not all_ok:
     sys.exit(2)

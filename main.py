@@ -24,9 +24,9 @@ from uuid import uuid4
 from flask import Flask, jsonify, render_template, request
 from werkzeug.utils import secure_filename
 
-# ============================================================================
-# LOGGING CONFIGURATION
-# ============================================================================
+#* ============================================================================
+#* LOGGING CONFIGURATION
+#* ============================================================================
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,22 +34,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
+#* ============================================================================
+#* CONFIGURATION
+#* ============================================================================
 
 app = Flask(__name__)
 
-# Security and upload configuration
+#! Security and upload configuration
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-key-change-in-production")
-app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB max upload
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  #* 100MB max upload
 
-# File type restrictions
-# Note: The project now accepts arbitrary file types. Extension-based
-# whitelisting was removed to support binary and non-text payloads.
-# Empty-file validation is still performed at runtime.
+#! File type restrictions
+#? The project now accepts arbitrary file types. Extension-based
+#? whitelisting was removed to support binary and non-text payloads.
+#? Empty-file validation is still performed at runtime.
 
-# Analysis constants
+#* Analysis constants for entropy detection
 ZIP_BASED_OFFICE_EXTENSIONS = {"docx", "pptx", "xlsx"}
 HIGH_ENTROPY_WARNING_EXTENSIONS = {
     "zip", "rar", "7z",
@@ -60,11 +60,11 @@ SAMPLED_ENTROPY_BYTES = 100 * 1024
 HIGH_ENTROPY_THRESHOLD = 7.3
 COMPRESSED_SUFFIX = "-compressed.bin"
 
-# Directory paths
+#* Directory paths for compressor binaries
 BASE_DIR = Path(__file__).parent
 COMPRESSOR_DIR = BASE_DIR / "compressor"
 
-# Detect platform and set binary names
+#! Detect platform and set binary names
 def get_compressor_binary(name):
     """Get the path to a compressor binary based on OS.
     
@@ -81,14 +81,14 @@ def get_compressor_binary(name):
     """
     binary_name = f"huff{name}"
     
-    # Allow custom compressor directory via environment variable
+    #! Allow custom compressor directory via environment variable
     custom_dir = os.environ.get("HUFFMAN_COMPRESSOR_DIR")
     if custom_dir:
         compressor_dir = Path(custom_dir)
     else:
         compressor_dir = COMPRESSOR_DIR
     
-    # On Windows, add .exe extension
+    #* On Windows, add .exe extension
     if platform.system() == "Windows":
         binary_path = compressor_dir / f"{binary_name}.exe"
     else:
@@ -99,6 +99,7 @@ def get_compressor_binary(name):
 COMPRESS_EXE = get_compressor_binary("compress")
 DECOMPRESS_EXE = get_compressor_binary("decompress")
 
+#* Startup logging - verify binary paths are correct
 logger.info(f"Platform: {platform.system()}")
 logger.info(f"Base directory: {BASE_DIR}")
 logger.info(f"Compressor directory: {COMPRESSOR_DIR}")
@@ -106,9 +107,9 @@ logger.info(f"Compress binary: {COMPRESS_EXE}")
 logger.info(f"Decompress binary: {DECOMPRESS_EXE}")
 
 
-# ============================================================================
-# UTILITY FUNCTIONS
-# ============================================================================
+#* ============================================================================
+#* UTILITY FUNCTIONS
+#* ============================================================================
 
 def allowed_file(filename, operation="compress"):
     """Allow any filename (remove extension whitelist).
@@ -126,7 +127,10 @@ def get_extension(filename):
 
 
 def compute_entropy(byte_sequence):
-    """Estimate Shannon entropy in bits per byte."""
+    """Estimate Shannon entropy in bits per byte.
+    
+    #* Uses Shannon's entropy formula to detect high-entropy (already compressed) files
+    """
     if not byte_sequence:
         return 0.0
 
@@ -140,6 +144,7 @@ def compute_entropy(byte_sequence):
 
 
 def sample_file_bytes(path, max_bytes=SAMPLED_ENTROPY_BYTES):
+    """#* Sample initial bytes from file for entropy analysis."""
     try:
         with open(path, 'rb') as f:
             return f.read(max_bytes)
@@ -167,7 +172,10 @@ def count_byte_frequencies(path, sample_limit=None):
 
 
 def build_huffman_lengths(counts):
-    """Return a mapping of byte values to Huffman code lengths."""
+    """Return a mapping of byte values to Huffman code lengths.
+    
+    #* Used for compression ratio analysis before actual C++ compression.
+    """
     import heapq
 
     class HuffmanNode:
@@ -210,7 +218,11 @@ def build_huffman_lengths(counts):
 
 
 def analyze_office_archive(path):
-    """Inspect Office ZIP containers and report text/XML layer metrics."""
+    """Inspect Office ZIP containers and report text/XML layer metrics.
+    
+    #! Deep scans Office files (docx, pptx, xlsx) to warn users about
+    #! XML-heavy content which may have inherent compression.
+    """
     details = {
         "office_archive": False,
         "office_xml_files": 0,
@@ -257,6 +269,7 @@ def analyze_office_archive(path):
     except zipfile.BadZipFile:
         details["office_message"] = "Office file is not a valid ZIP container or is corrupted. Deep scan could not be completed."
     except Exception as err:
+        #! Log deep scan failures but don't break the operation
         logger.warning(f"Office deep scan failed: {err}")
         details["office_message"] = "Office deep scan encountered an error during content analysis."
 
@@ -264,6 +277,7 @@ def analyze_office_archive(path):
 
 
 def create_compression_report(path, compressed_size, sample_limit=1024 * 1024):
+    """#* Generate detailed compression analysis and statistics for display."""
     original_size = path.stat().st_size if path.exists() else 0
     sample_bytes = sample_file_bytes(path)
     entropy = compute_entropy(sample_bytes)
@@ -275,6 +289,7 @@ def create_compression_report(path, compressed_size, sample_limit=1024 * 1024):
         bit_sum = sum(counts[b] * huffman_lengths.get(b, 8) for b in range(256))
         avg_bits = bit_sum / total_symbols
 
+    #* Find top 5 most frequent bytes for display
     top_symbols = []
     for byte_value, freq in sorted(((i, freq) for i, freq in enumerate(counts) if freq > 0), key=lambda x: x[1], reverse=True)[:5]:
         top_symbols.append({
@@ -289,6 +304,7 @@ def create_compression_report(path, compressed_size, sample_limit=1024 * 1024):
         "compression_ratio": round((compressed_size / original_size * 100) if original_size > 0 else 0.0, 2),
         "saved_bytes": original_size - compressed_size,
         "entropy": round(entropy, 4),
+        #! Alert if file is high-entropy (already compressed)
         "entropy_warning": (
             "This file appears highly random or already compressed. Additional Huffman compression may not yield meaningful savings."
             if entropy >= HIGH_ENTROPY_THRESHOLD else None
@@ -301,6 +317,7 @@ def create_compression_report(path, compressed_size, sample_limit=1024 * 1024):
 
 
 def make_entropy_warning(filename, entropy):
+    """#* Generate user-friendly warning message for high-entropy files."""
     ext = get_extension(filename)
     warnings = []
     if ext in HIGH_ENTROPY_WARNING_EXTENSIONS:
@@ -313,6 +330,7 @@ def make_entropy_warning(filename, entropy):
 
 
 def safe_compressed_filename(filename):
+    """#* Ensure output filename has -compressed.bin suffix for consistency."""
     if filename.endswith(COMPRESSED_SUFFIX):
         return filename
     base, ext = os.path.splitext(filename)
@@ -320,7 +338,10 @@ def safe_compressed_filename(filename):
 
 
 def maybe_timeout_for_size(filesize):
-    """Choose a timeout window based on file size."""
+    """#* Choose a timeout window based on file size.
+    
+    Larger files need more time for C++ processing.
+    """
     if filesize > 50 * 1024 * 1024:
         return 120
     if filesize > 10 * 1024 * 1024:
@@ -329,7 +350,7 @@ def maybe_timeout_for_size(filesize):
 
 
 def save_uploaded_file(file_storage, target_dir, filename=None):
-    """Persist an uploaded file in the temporary session directory."""
+    """#* Persist an uploaded file in the temporary session directory."""
     safe_name = secure_filename(filename or file_storage.filename)
     if not safe_name:
         raise ValueError("Uploaded file must have a filename")
@@ -340,7 +361,10 @@ def save_uploaded_file(file_storage, target_dir, filename=None):
 
 
 def build_response_archive_bytes(content_bytes, inner_filename, archive_name, metadata, target_dir):
-    """Create a ZIP archive in temporary storage and return its base64 payload."""
+    """#* Create a ZIP archive in temporary storage and return its base64 payload.
+    
+    #* Combines compressed/decompressed file with metadata.json for easy download.
+    """
     archive_path = target_dir / archive_name
     with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(inner_filename, content_bytes)
@@ -349,7 +373,10 @@ def build_response_archive_bytes(content_bytes, inner_filename, archive_name, me
 
 
 def extract_compressed_bin_from_zip(zip_path, target_dir):
-    """Extract the first supported compressed binary from a ZIP upload safely."""
+    """#* Extract the first supported compressed binary from a ZIP upload safely.
+    
+    #! Validates ZIP structure and only extracts .bin files.
+    """
     try:
         with zipfile.ZipFile(zip_path, 'r') as archive:
             for info in archive.infolist():
@@ -369,14 +396,13 @@ def extract_compressed_bin_from_zip(zip_path, target_dir):
 
 
 def run_compressor(input_file, exe_path, output_dir, timeout=30):
-    """
-    Execute the Huffman compressor or decompressor and resolve the generated output.
+    """#! Execute the Huffman compressor or decompressor and resolve generated output.
 
-    This function keeps the backend isolated from binary details. It:
-    1. Validates the executable exists
-    2. Ensures Unix binaries are runnable
-    3. Runs the compressor or decompressor
-    4. Finds the generated output file in the temporary session directory
+    #* This function keeps the backend isolated from binary details. It:
+    #* 1. Validates the executable exists
+    #* 2. Ensures Unix binaries are runnable
+    #* 3. Runs the compressor or decompressor
+    #* 4. Finds the generated output file in the temporary session directory
 
     Args:
         input_file: Path object for the saved upload
@@ -394,6 +420,7 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
     logger.info("  Executable: %s", exe_path)
     logger.info("  Output directory: %s", output_dir)
 
+    #! Validate required files and directories
     if not exe_path.exists() or not exe_path.is_file():
         error_msg = f"Compressor binary not found at: {exe_path}"
         logger.error(error_msg)
@@ -404,6 +431,7 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
         logger.error(error_msg)
         return False, None, error_msg
 
+    #* Make binaries executable on Unix systems
     if platform.system() != 'Windows':
         try:
             os.chmod(exe_path, 0o755)
@@ -411,6 +439,7 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
             logger.warning("Could not set executable permission: %s", exc)
 
     try:
+        #* Execute the compressor binary with appropriate timeout
         result = subprocess.run(
             [str(exe_path), str(input_file)],
             capture_output=True,
@@ -425,11 +454,13 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
         if result.stderr:
             logger.warning("Process stderr: %s", result.stderr[:200])
 
+        #! Handle execution errors
         if result.returncode != 0:
             error_msg = result.stderr.strip() or result.stdout.strip() or 'Unknown error'
             logger.error("Binary failed: %s", error_msg)
             return False, None, error_msg
 
+        #* Locate the generated output file
         if operation == 'compress':
             expected_output = input_file.parent / f"{input_file.stem}-compressed.bin"
         else:
@@ -465,24 +496,23 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
         return False, None, error_msg
 
 
-# ============================================================================
-# FLASK ROUTES
-# ============================================================================
+#* ============================================================================
+#* FLASK ROUTES
+#* ============================================================================
 
 @app.route("/")
 def home():
-    """Render home page."""
+    """#* Render home page."""
     return render_template("index.html")
 
 
 @app.route("/compress", methods=["GET", "POST"])
 def compress():
-    """
-    Handle file compression requests.
+    """#! Handle file compression requests.
 
-    GET: render the compression page.
-    POST: save uploads in a temporary session, compress each file with the C++ engine,
-    and return a JSON payload containing base64 ZIP archives for download.
+    #* GET: render the compression page.
+    #* POST: save uploads in a temporary session, compress each file with the C++ engine,
+    #* and return a JSON payload containing base64 ZIP archives for download.
     """
     if request.method == "GET":
         return render_template("compress.html")
@@ -603,12 +633,11 @@ def generate_job_id():
 
 @app.route("/decompress", methods=["GET", "POST"])
 def decompress():
-    """
-    Handle file decompression requests.
+    """#! Handle file decompression requests.
 
-    GET: render the decompression page.
-    POST: save uploads, extract valid compressed binaries, run the C++ decompressor,
-    and return base64 ZIP archives with restored files.
+    #* GET: render the decompression page.
+    #* POST: save uploads, extract valid compressed binaries, run the C++ decompressor,
+    #* and return base64 ZIP archives with restored files.
     """
     if request.method == "GET":
         return render_template("decompress.html")
@@ -726,13 +755,13 @@ def decompress():
 
 @app.route("/about")
 def about():
-    """Render about page."""
+    """#* Render about page."""
     return render_template("about.html")
 
 
 @app.route("/debug")
 def debug():
-    """Debug endpoint to show environment and deployment information."""
+    """#? Debug endpoint to show environment and deployment information."""
     import shutil
     
     debug_info = {
@@ -780,19 +809,19 @@ def debug():
 
 @app.errorhandler(413)
 def too_large(e):
-    """Handle files that exceed max size."""
+    """#! Handle files that exceed max size."""
     return jsonify({"error": "File too large. Maximum size is 100MB"}), 413
 
 
 @app.errorhandler(404)
 def not_found(e):
-    """Handle 404 errors."""
+    """#! Handle 404 errors."""
     return jsonify({"error": "Page not found"}), 404
 
 
 @app.errorhandler(500)
 def server_error(e):
-    """Handle server errors."""
+    """#! Handle server errors."""
     return jsonify({"error": "Internal server error"}), 500
 
 
