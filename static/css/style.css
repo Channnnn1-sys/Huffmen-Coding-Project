@@ -577,28 +577,19 @@ body{
 .about-grid,
 .creator-grid{
     display:grid;
-
     gap:22px;
 }
 
 .about-grid{
-    grid-template-columns:
-    repeat(auto-fit,minmax(280px,1fr));
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
 .creator-grid {
-    display: grid;
-    gap: 22px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 /**! =========================================================================
    ABOUT PAGE - About section and creator cards
 ========================================================================== */
-
-.about-container{
-    display:grid;
-    grid-template-columns:
-    repeat(auto-fit,minmax(240px,1fr));  /*! Responsive grid layout */
-}
 
 .about-card,
 .creator-card{
