@@ -290,22 +290,9 @@ body{
 
 .btn{
     border:none;
-
     cursor:pointer;
-
-    border-radius:14px;
-
-    padding:14px 22px;
-
-/**! =========================================================================
-   BUTTONS - Primary, secondary, and sized variants
-========================================================================== */
-
-.btn{
-    padding:14px 24px;
     border-radius:12px;
-    border:none;
-    cursor:pointer;
+    padding:14px 24px;
     font-weight:600;
     font-size:.95rem;
     text-decoration:none;
@@ -315,6 +302,10 @@ body{
     gap:10px;
     transition:var(--transition);
 }
+
+/**! =========================================================================
+   BUTTONS - Primary, secondary, and sized variants
+========================================================================== */
 
 .btn:hover{
     transform:translateY(-2px);  /*! Lift effect on hover */
