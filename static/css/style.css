@@ -586,8 +586,10 @@ body{
     repeat(auto-fit,minmax(280px,1fr));
 }
 
-.creator-grid{
-    grid-template-columns:
+.creator-grid {
+    display: grid;
+    gap: 22px;
+}
 /**! =========================================================================
    ABOUT PAGE - About section and creator cards
 ========================================================================== */
