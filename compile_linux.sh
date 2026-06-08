@@ -1,5 +1,4 @@
 #!/bin/bash
-#!/bin/bash
 # Compile Huffman binaries for Linux
 
 set -e
@@ -59,11 +58,6 @@ echo "✓ Permissions set"
 echo
 echo "=============================================================="
 echo "Listing compiled binaries:"
-ls -lh huffcompress huffdecompress
-
-echo
-echo "✓ All binaries compiled successfully!"
-echo "=============================================================="
 ls -lh huffcompress huffdecompress
 
 echo

@@ -1,12 +1,14 @@
-# Huffman File Compression Web Application v2.0
+# Huffman File Compression Web Application
 
 ## Overview
 
-The Huffman File Compression Web Application is a web-based compression and decompression system built using Python Flask and C++. It combines a Flask backend with a native Huffman coding engine written in C++ to provide efficient file compression through a modern web interface.
+This project is a web-based Huffman compression system powered by a native C++ processing engine with Flask integration.
 
-The application supports both local execution and cloud deployment environments such as Render. Files are processed in temporary session directories and are never permanently stored on the server.
+The application uses Flask as the lightweight web interface layer and native C++ as the computational core for Huffman compression and decompression. It is designed for Render/Linux deployment and follows a stateless cloud architecture in which uploads are processed in temporary session directories and cleaned up automatically.
 
-This project was developed as an educational implementation of the Huffman Coding algorithm while also demonstrating full-stack integration between C++, Python Flask, HTML, CSS, and JavaScript.
+TXT files are the primary supported evaluation format because Huffman coding performs best on text-like data with repeated symbols. Binary formats such as PDF, DOCX, JPG, and MP4 may not compress effectively because they often already contain high entropy or internal compression.
+
+This project remains intentionally simple and academic: Flask handles HTTP, templates, routing, and ZIP packaging, while the C++ engine performs the actual computational work.
 
 ---
 
@@ -31,7 +33,11 @@ This project was developed as an educational implementation of the Huffman Codin
 
 ### Compression
 
-The application accepts virtually any file type, including:
+The application accepts many file types for demonstration, but the most reliable compression results are expected on TXT, CSV, LOG, JSON, XML, and source-code files.
+
+Binary or already-compressed content such as PDF, DOCX, JPG, PNG, MP3, MP4, and ZIP may not reduce in size meaningfully because the data already has high entropy or internal compression.
+
+Examples of practical input types include:
 
 * TXT
 * DOC
@@ -116,9 +122,9 @@ JSON Response
 Browser Download
 ```
 
-The application uses a stateless architecture suitable for cloud deployment.
+The application uses a stateless cloud-friendly architecture suitable for Render and Linux hosting.
 
-No uploaded files remain on the server after processing is complete.
+No uploaded files remain on the server after processing is complete, and the C++ engine remains the main computational component behind the Flask interface.
 
 ---
 

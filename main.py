@@ -12,6 +12,7 @@ import logging
 import os
 import platform
 import re
+import sys
 import subprocess
 import tempfile
 import zipfile
@@ -368,8 +369,32 @@ def build_response_archive_bytes(content_bytes, inner_filename, archive_name, me
     archive_path = target_dir / archive_name
     with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(inner_filename, content_bytes)
-        archive.writestr('metadata.json', json.dumps(metadata))
+        archive.writestr('metadata.json', json.dumps(metadata, indent=2))
     return base64.b64encode(archive_path.read_bytes()).decode()
+
+
+def build_download_metadata(operation, original_name, output_name, size_info):
+    """Return the metadata dictionary used for downloadable ZIP results."""
+    if operation == "compress":
+        return {
+            "algorithm": "huffman",
+            "operation": "compress",
+            "original_filename": original_name,
+            "compressed_filename": output_name,
+            "original_size": size_info.get("original_size", 0),
+            "compressed_size": size_info.get("compressed_size", 0),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    return {
+        "algorithm": "huffman",
+        "operation": "decompress",
+        "original_compressed": original_name,
+        "decompressed_filename": output_name,
+        "compressed_size": size_info.get("compressed_size", 0),
+        "decompressed_size": size_info.get("decompressed_size", 0),
+        "timestamp": datetime.now().isoformat(),
+    }
 
 
 def extract_compressed_bin_from_zip(zip_path, target_dir):
@@ -576,14 +601,15 @@ def compress():
                 processing_time = (datetime.now() - start_time).total_seconds()
 
                 zip_name = f"{temp_input_path.stem}-compressed.zip"
-                metadata = {
-                    "algorithm": "huffman",
-                    "original_filename": filename,
-                    "original_size": report["original_size"],
-                    "compressed_filename": output_file.name,
-                    "compressed_size": report["compressed_size"],
-                    "timestamp": datetime.now().isoformat()
-                }
+                metadata = build_download_metadata(
+                    "compress",
+                    filename,
+                    output_file.name,
+                    {
+                        "original_size": report["original_size"],
+                        "compressed_size": report["compressed_size"],
+                    },
+                )
                 data_b64 = build_response_archive_bytes(
                     compressed_data,
                     output_file.name,
@@ -712,14 +738,15 @@ def decompress():
                 processing_time = (datetime.now() - start_time).total_seconds()
 
                 zip_name = f"{output_file.stem}-decompressed.zip"
-                metadata = {
-                    "algorithm": "huffman",
-                    "original_compressed": filename,
-                    "decompressed_filename": output_file.name,
-                    "compressed_size": compressed_size,
-                    "decompressed_size": decompressed_size,
-                    "timestamp": datetime.now().isoformat()
-                }
+                metadata = build_download_metadata(
+                    "decompress",
+                    filename,
+                    output_file.name,
+                    {
+                        "compressed_size": compressed_size,
+                        "decompressed_size": decompressed_size,
+                    },
+                )
                 data_b64 = build_response_archive_bytes(
                     decompressed_data,
                     output_file.name,

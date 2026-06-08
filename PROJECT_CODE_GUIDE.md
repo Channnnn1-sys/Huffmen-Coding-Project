@@ -3,12 +3,12 @@
 ## Overview
 This repository implements a small educational web application for file compression and decompression using Huffman coding.
 
-- Backend: `main.py` uses Flask to handle web requests.
+- Backend: `main.py` uses Flask as the lightweight interface and request layer.
+- Computational core: native C++ binaries in `compressor/` (`huffcompress` / `huffdecompress`).
 - Frontend: HTML templates in `templates/` and static CSS/JS in `static/`.
-- Compression engine: C++ binaries in `compressor/` (`huffcompress` / `huffdecompress`).
-- Deployment: designed for local use and Render cloud deployment.
+- Deployment: designed for local use and Render/Linux cloud deployment.
 
-The app uses temporary directories for all uploads and outputs. No files are permanently stored on the server.
+The app uses temporary directories for all uploads and outputs. No files are permanently stored on the server, which matches the stateless cloud deployment model.
 
 ## Architecture
 The app is intentionally simple and beginner-friendly.
@@ -29,6 +29,13 @@ The app is intentionally simple and beginner-friendly.
 ## Request Lifecycle
 The full lifecycle for a compress or decompress request is:
 
+1. The browser sends a `multipart/form-data` request to `/compress` or `/decompress`.
+2. Flask validates the incoming files, sanitizes names, and creates a fresh `TemporaryDirectory()` for that request.
+3. The Python layer performs light analysis (entropy, warnings, optional Office deep scan) and prepares the file for the C++ engine.
+4. The Python layer calls the native C++ executable through `subprocess.run()`.
+5. The generated output is read back, zipped, base64-encoded, and returned to the browser.
+6. The temporary directory is cleaned automatically when the request ends.
+
 1. Validate that the `files` field exists and contains uploads.
 2. Create a temporary session directory with `tempfile.TemporaryDirectory()`.
 3. Save uploaded file(s) in that temporary directory.
@@ -40,13 +47,19 @@ The full lifecycle for a compress or decompress request is:
 9. Exit the `with tempfile.TemporaryDirectory()` block, which removes all temp files.
 
 ## Compression Workflow
-The compression workflow is in the `/compress` route.
+The compression workflow is in the `/compress` route and is intentionally simple:
+
+- Flask receives the upload.
+- The file is saved in a temporary session directory.
+- The app computes entropy and other lightweight analysis values.
+- The C++ compressor performs the actual Huffman encoding step.
+- Python packages the result and returns it to the browser.
 
 - Each uploaded file is saved temporarily.
 - The app performs optional analysis:
   - entropy estimation for randomness detection
   - Office ZIP text-layer scan for `.docx`, `.pptx`, `.xlsx`
-- The file is passed to the `huffcompress` executable.
+- The file is passed to the `huffcompress` executable, which remains the real computation engine.
 - After compression completes, the app reads the generated `-compressed.bin` file.
 - It creates metadata and packages the compressed file into a ZIP archive.
 - The ZIP archive is encoded to base64 and returned in JSON.
@@ -57,7 +70,12 @@ The compression workflow is in the `/compress` route.
 - There is no permanent server-side storage of processed files.
 
 ## Decompression Workflow
-The decompression workflow is in the `/decompress` route.
+The decompression workflow is in the `/decompress` route and follows the same pattern in reverse:
+
+- The uploaded `.bin` file or ZIP package is validated.
+- The Python layer extracts the first supported compressed file when needed.
+- The C++ decompressor restores the original file.
+- Python returns the restored file inside a ZIP archive for download.
 
 - Uploaded file(s) can be raw `.bin` output or ZIP archives containing `.bin` files.
 - Uploaded ZIPs are inspected safely and the first supported `.bin` file is extracted.

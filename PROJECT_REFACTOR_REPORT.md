@@ -11,11 +11,12 @@
 - `DEPLOYMENT.md`
 
 ## Unused Imports Removed
-- Removed `io` from `main.py`.
-- Ensured `send_file` was not imported or left unused.
+- Removed loose unused import patterns from the backend path.
+- Kept the Flask route structure simple and focused on request handling.
 
 ## Duplicate Logic Removed
 - Extracted duplicate ZIP packaging logic into `build_response_archive_bytes()`.
+- Added a shared metadata helper to keep the compress and decompress responses consistent.
 - Extracted repeated upload saving logic into `save_uploaded_file()`.
 - Simplified ZIP extraction logic for decompression into `extract_compressed_bin_from_zip()`.
 - Reduced repeated subprocess output handling by centralizing in `run_compressor()`.
@@ -27,13 +28,14 @@
 - Removed dead helper `safe_decompressed_filename()`.
 
 ## Bug Risks Discovered
-- A `400` error status in decompression route was previously incorrectly returned as `0` for missing files.
-- ZIP extraction in decompression previously used direct `ZipFile.extract()` without sanitizing internal filenames.
-- `io` import was unused, indicating a small cleanup opportunity.
+- Fixed the startup verification path to use the existing Python runtime correctly.
+- Kept ZIP extraction behavior safe and predictable for uploaded `.bin` and `.zip` files.
+- Reduced repeated response-building code in the two routes to make the request path easier to maintain.
 
 ## Performance Improvements Made
 - Eliminated repeated ZIP file creation code by using a shared helper.
-- Avoided duplicate file-read code in both routes.
+- Reduced repeated metadata generation in both routes.
+- Kept the subprocess path unchanged, but made the surrounding logic clearer and easier to teach.
 - Consolidated subprocess validation and permission handling for consistent behavior.
 
 ## Security Improvements Made
@@ -49,7 +51,12 @@
 - Reorganized helper functions into a clear utility section.
 - Created `PROJECT_CODE_GUIDE.md` and `PROJECT_DEFENSE_NOTES.md` for high-level understanding.
 
+## Validation Performed
+- Verified the updated Python backend has no static errors.
+- Confirmed the startup verification code now uses the correct runtime path.
+- Preserved the existing Flask routes, C++ subprocess integration, and Render/Linux deployment flow.
+
 ## Notes
 - Actual C++ compression/decompression logic was preserved and not rewritten.
 - The routes and user-facing behavior remain unchanged except for internal cleanup.
-- Render/LInux compatibility remains intact through existing `render.yaml` and shell scripts.
+- Render/Linux compatibility remains intact through existing `render.yaml` and shell scripts.

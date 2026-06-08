@@ -4,11 +4,12 @@
 
 ### 1. What problem does this project solve?
 - It demonstrates lossless compression using Huffman coding.
-- The app lets users upload files, compress them with a C++ engine, and download the results.
+- The app lets users upload files, compress them with a native C++ engine, and download the results.
 - It also supports decompression to restore the original file.
+- TXT files are the primary effective evaluation target because repeated symbols make Huffman coding useful.
 
 ### 2. Why use both Python and C++?
-- Python provides a beginner-friendly web server with Flask.
+- Flask provides the lightweight web interface and HTTP layer.
 - C++ performs the computational Huffman compression and decompression efficiently.
 - This hybrid design shows how languages can work together in real applications.
 
@@ -85,7 +86,8 @@
 - Not optimized for large streaming uploads.
 - Not production hardened with authentication or rate limiting.
 - Uses synchronous request processing; concurrency depends on the WSGI server.
-- The C++ compressor uses a custom format rather than a standard archive format.
+- The C++ compressor uses a custom format rather than a standard archive format, which keeps the project educational and easy to explain.
+- Some binary files such as PDFs, DOCX, JPG, and MP4 may expand because they already contain high entropy or internal compression.
 - UI is basic and meant for demonstration rather than enterprise use.
 
 ## Planned Future Improvements
