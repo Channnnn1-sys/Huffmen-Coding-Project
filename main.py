@@ -1,9 +1,13 @@
 """
 Huffman File Compression Web Application
 
-This Flask app teaches file compression with a C++ Huffman engine.
-It keeps the server stateless by processing uploads in temporary directories,
-returning results as base64 payloads, and cleaning up immediately.
+This project presents a native C++ Huffman compression engine exposed through
+Flask as the lightweight web interface and deployment layer.
+
+Python handles HTTP requests, uploads, temporary session directories, ZIP
+packaging, and browser download responses. The actual Huffman compression and
+reconstruction remain in the compiled C++ executables for the real
+computational work.
 """
 
 import base64
@@ -129,8 +133,9 @@ def get_extension(filename):
 
 def compute_entropy(byte_sequence):
     """Estimate Shannon entropy in bits per byte.
-    
-    #* Uses Shannon's entropy formula to detect high-entropy (already compressed) files
+
+    This is a lightweight Python-side heuristic for user guidance.
+    The actual Huffman coding work is still performed by the native C++ engine.
     """
     if not byte_sequence:
         return 0.0
@@ -278,7 +283,11 @@ def analyze_office_archive(path):
 
 
 def create_compression_report(path, compressed_size, sample_limit=1024 * 1024):
-    """#* Generate detailed compression analysis and statistics for display."""
+    """Generate lightweight compression statistics for the browser.
+
+    These values help explain expected performance to the user.
+    The real encoding/decoding work remains in the compiled C++ engine.
+    """
     original_size = path.stat().st_size if path.exists() else 0
     sample_bytes = sample_file_bytes(path)
     entropy = compute_entropy(sample_bytes)

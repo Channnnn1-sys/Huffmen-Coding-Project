@@ -4,11 +4,11 @@
 This repository implements a small educational web application for file compression and decompression using Huffman coding.
 
 - Backend: `main.py` uses Flask as the lightweight interface and request layer.
-- Computational core: native C++ binaries in `compressor/` (`huffcompress` / `huffdecompress`).
+- Computational core: native C++ binaries in `compressor/` (`huffcompress` / `huffdecompress`) perform the real Huffman encoding and decoding.
 - Frontend: HTML templates in `templates/` and static CSS/JS in `static/`.
 - Deployment: designed for local use and Render/Linux cloud deployment.
 
-The app uses temporary directories for all uploads and outputs. No files are permanently stored on the server, which matches the stateless cloud deployment model.
+The app uses temporary directories for all uploads and outputs. No files are permanently stored on the server, which matches the stateless cloud deployment model. Python remains responsible for the web layer, while the native C++ engine remains responsible for the actual compression computations. This separation supports the project narrative: Flask interfaces with the browser, while C++ provides the compiled processing core.
 
 ## Architecture
 The app is intentionally simple and beginner-friendly.

@@ -4,13 +4,13 @@
 
 ### 1. What problem does this project solve?
 - It demonstrates lossless compression using Huffman coding.
-- The app lets users upload files, compress them with a native C++ engine, and download the results.
+- The app lets users upload files, compress them with a native C++ engine, and download the results through Flask-managed routes and ZIP packaging.
 - It also supports decompression to restore the original file.
 - TXT files are the primary effective evaluation target because repeated symbols make Huffman coding useful.
 
 ### 2. Why use both Python and C++?
-- Flask provides the lightweight web interface and HTTP layer.
-- C++ performs the computational Huffman compression and decompression efficiently.
+- Flask provides the lightweight web interface, HTTP layer, and deployment integration.
+- C++ is the primary computational core because it performs the real Huffman compression and decompression work efficiently in compiled form.
 - This hybrid design shows how languages can work together in real applications.
 
 ### 3. How does the app stay stateless?
@@ -87,7 +87,7 @@
 - Not production hardened with authentication or rate limiting.
 - Uses synchronous request processing; concurrency depends on the WSGI server.
 - The C++ compressor uses a custom format rather than a standard archive format, which keeps the project educational and easy to explain.
-- Some binary files such as PDFs, DOCX, JPG, and MP4 may expand because they already contain high entropy or internal compression.
+- Some binary files such as PDFs, DOCX, JPG, and MP4 may expand because they already contain high entropy or internal compression, which reduces the benefit of additional prefix-free Huffman coding.
 - UI is basic and meant for demonstration rather than enterprise use.
 
 ## Planned Future Improvements
@@ -102,7 +102,7 @@
 ## Defensible Points
 
 - The project separates concerns clearly: web handling, file management, subprocess execution, and compression logic.
-- The use of temporary directories is a strong design choice for cloud safety.
+- The use of temporary directories is a strong design choice for cloud safety, and it also keeps the Flask layer lightweight.
 - The code avoids dangerous filename handling and returns safe JSON responses.
-- The integration between Python and C++ demonstrates practical interoperability.
+- The integration between Python and C++ demonstrates practical interoperability and supports the academic claim that the system uses a native C++ computational core with a Flask interface layer.
 - The project delivers the same feature set while improving readability and maintainability.

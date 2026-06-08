@@ -2,13 +2,13 @@
 
 ## Overview
 
-This project is a web-based Huffman compression system powered by a native C++ processing engine with Flask integration.
+This project is a web-based Huffman compression system powered by a native C++ computational engine with Flask serving as the lightweight interface and deployment layer.
 
-The application uses Flask as the lightweight web interface layer and native C++ as the computational core for Huffman compression and decompression. It is designed for Render/Linux deployment and follows a stateless cloud architecture in which uploads are processed in temporary session directories and cleaned up automatically.
+The application uses compiled C++ for the real Huffman compression and decompression work, while Flask handles uploads, HTTP routing, temporary session directories, JSON responses, and browser download packaging. It is designed for Render/Linux deployment and follows a stateless cloud architecture in which uploads are processed in temporary session directories and cleaned up automatically.
 
-TXT files are the primary supported evaluation format because Huffman coding performs best on text-like data with repeated symbols. Binary formats such as PDF, DOCX, JPG, and MP4 may not compress effectively because they often already contain high entropy or internal compression.
+TXT files are the primary effective evaluation format because Huffman coding performs best on text-like data with repeated symbols and low-to-moderate entropy. Binary formats such as PDF, DOCX, JPG, and MP4 may not compress effectively because they often already contain high entropy, internal compression, or highly random content, which limits the usefulness of prefix-free Huffman coding.
 
-This project remains intentionally simple and academic: Flask handles HTTP, templates, routing, and ZIP packaging, while the C++ engine performs the actual computational work.
+This project remains intentionally simple and academic: Flask handles HTTP, templates, routing, and ZIP packaging, while the compiled C++ engine performs the actual computational work. The Python side is kept lightweight so the system stays easy to deploy on Render/Linux and easy to explain in a research or defense setting.
 
 ---
 

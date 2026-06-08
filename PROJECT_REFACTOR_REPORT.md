@@ -36,6 +36,7 @@
 - Eliminated repeated ZIP file creation code by using a shared helper.
 - Reduced repeated metadata generation in both routes.
 - Kept the subprocess path unchanged, but made the surrounding logic clearer and easier to teach.
+- Reinforced the architecture narrative so the project clearly presents C++ as the computational core and Flask as the lightweight interface/deployment layer.
 - Consolidated subprocess validation and permission handling for consistent behavior.
 
 ## Security Improvements Made
