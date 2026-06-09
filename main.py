@@ -411,32 +411,40 @@ def extract_compressed_bin_from_zip(zip_path, target_dir):
     
     #! Validates ZIP structure and only extracts .bin files.
     """
+    logger.info("Extracting compressed .bin from ZIP: %s", zip_path)
     try:
         with zipfile.ZipFile(zip_path, 'r') as archive:
-            for info in archive.infolist():
+            members = archive.infolist()
+            logger.info("ZIP contents: %s", [info.filename for info in members])
+            for info in members:
                 candidate_name = Path(info.filename).name
                 if candidate_name.endswith('-compressed.bin') or candidate_name.lower().endswith('.bin'):
+                    logger.info("Found binary candidate in ZIP: %s", info.filename)
                     safe_name = secure_filename(candidate_name)
                     if not safe_name:
+                        logger.warning("Skipping unsafe candidate name in ZIP: %s", info.filename)
                         continue
 
                     extracted_path = target_dir / safe_name
                     with archive.open(info, 'r') as source, open(extracted_path, 'wb') as target:
                         target.write(source.read())
+                    logger.info("Extracted compressed binary to: %s", extracted_path)
                     return extracted_path
     except zipfile.BadZipFile:
+        logger.error("Invalid ZIP archive: %s", zip_path)
         return None
     return None
 
 
 def run_compressor(input_file, exe_path, output_dir, timeout=30):
-    """#! Execute the Huffman compressor or decompressor and resolve generated output.
+    """
+    Execute the Huffman compressor or decompressor and resolve the generated output.
 
-    #* This function keeps the backend isolated from binary details. It:
-    #* 1. Validates the executable exists
-    #* 2. Ensures Unix binaries are runnable
-    #* 3. Runs the compressor or decompressor
-    #* 4. Finds the generated output file in the temporary session directory
+    This function keeps the backend isolated from binary details. It:
+    1. Validates the executable exists
+    2. Ensures Unix binaries are runnable
+    3. Runs the compressor or decompressor
+    4. Finds the generated output file in the temporary session directory
 
     Args:
         input_file: Path object for the saved upload
@@ -453,8 +461,8 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
     logger.info("  Input file: %s", input_file)
     logger.info("  Executable: %s", exe_path)
     logger.info("  Output directory: %s", output_dir)
+    logger.info("  Subprocess command: %s", [str(exe_path), str(input_file)])
 
-    #! Validate required files and directories
     if not exe_path.exists() or not exe_path.is_file():
         error_msg = f"Compressor binary not found at: {exe_path}"
         logger.error(error_msg)
@@ -465,7 +473,6 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
         logger.error(error_msg)
         return False, None, error_msg
 
-    #* Make binaries executable on Unix systems
     if platform.system() != 'Windows':
         try:
             os.chmod(exe_path, 0o755)
@@ -473,7 +480,6 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
             logger.warning("Could not set executable permission: %s", exc)
 
     try:
-        #* Execute the compressor binary with appropriate timeout
         result = subprocess.run(
             [str(exe_path), str(input_file)],
             capture_output=True,
@@ -488,18 +494,18 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
         if result.stderr:
             logger.warning("Process stderr: %s", result.stderr[:200])
 
-        #! Handle execution errors
         if result.returncode != 0:
             error_msg = result.stderr.strip() or result.stdout.strip() or 'Unknown error'
             logger.error("Binary failed: %s", error_msg)
             return False, None, error_msg
 
-        #* Locate the generated output file
         if operation == 'compress':
             expected_output = input_file.parent / f"{input_file.stem}-compressed.bin"
         else:
             base_name = input_file.stem.replace('-compressed', '')
             expected_output = None
+            candidates = [candidate.name for candidate in output_dir.iterdir() if candidate.is_file()]
+            logger.info("Output directory candidates after decompression: %s", candidates)
             for candidate in output_dir.iterdir():
                 if candidate.is_file() and candidate.name.startswith(f"{base_name}-decompressed"):
                     expected_output = candidate
@@ -509,6 +515,7 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
                 logger.error(error_msg)
                 return False, None, error_msg
 
+        logger.info("Expected output file resolved to: %s", expected_output)
         if expected_output.exists():
             return True, expected_output, None
 
@@ -530,23 +537,24 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
         return False, None, error_msg
 
 
-#* ============================================================================
-#* FLASK ROUTES
-#* ============================================================================
+# ============================================================================
+# FLASK ROUTES
+# ============================================================================
 
 @app.route("/")
 def home():
-    """#* Render home page."""
+    """Render home page."""
     return render_template("index.html")
 
 
 @app.route("/compress", methods=["GET", "POST"])
 def compress():
-    """#! Handle file compression requests.
+    """
+    Handle file compression requests.
 
-    #* GET: render the compression page.
-    #* POST: save uploads in a temporary session, compress each file with the C++ engine,
-    #* and return a JSON payload containing base64 ZIP archives for download.
+    GET: render the compression page.
+    POST: save uploads in a temporary session, compress each file with the C++ engine,
+    and return a JSON payload containing base64 ZIP archives for download.
     """
     if request.method == "GET":
         return render_template("compress.html")
@@ -668,11 +676,12 @@ def generate_job_id():
 
 @app.route("/decompress", methods=["GET", "POST"])
 def decompress():
-    """#! Handle file decompression requests.
+    """
+    Handle file decompression requests.
 
-    #* GET: render the decompression page.
-    #* POST: save uploads, extract valid compressed binaries, run the C++ decompressor,
-    #* and return base64 ZIP archives with restored files.
+    GET: render the decompression page.
+    POST: save uploads, extract valid compressed binaries, run the C++ decompressor,
+    and return base64 ZIP archives with restored files.
     """
     if request.method == "GET":
         return render_template("decompress.html")
@@ -692,8 +701,10 @@ def decompress():
 
     with tempfile.TemporaryDirectory() as temp_session_dir:
         temp_session_path = Path(temp_session_dir)
+        logger.info("Temporary session directory: %s", temp_session_path)
 
         for uploaded_file in files:
+            logger.info("Received uploaded file for decompression: %s", uploaded_file.filename)
             if not uploaded_file.filename:
                 continue
 
@@ -725,6 +736,7 @@ def decompress():
                     if temp_upload_path.name != temp_input_path.name:
                         temp_upload_path.rename(temp_input_path)
 
+                logger.info("Resolved decompression input path: %s", temp_input_path)
                 timeout = maybe_timeout_for_size(temp_input_path.stat().st_size)
                 success, output_file, error = run_compressor(
                     temp_input_path,
@@ -740,6 +752,9 @@ def decompress():
                         "error": error
                     })
                     continue
+
+                logger.info("Decompress completed. Output file: %s", output_file)
+                logger.info("Temporary session contents after decompression: %s", [p.name for p in temp_session_path.iterdir()])
 
                 decompressed_data = output_file.read_bytes()
                 compressed_size = temp_input_path.stat().st_size
@@ -791,13 +806,13 @@ def decompress():
 
 @app.route("/about")
 def about():
-    """#* Render about page."""
+    """Render about page."""
     return render_template("about.html")
 
 
 @app.route("/debug")
 def debug():
-    """#? Debug endpoint to show environment and deployment information."""
+    """Debug endpoint to show environment and deployment information."""
     import shutil
     
     debug_info = {
@@ -845,19 +860,19 @@ def debug():
 
 @app.errorhandler(413)
 def too_large(e):
-    """#! Handle files that exceed max size."""
+    """Handle files that exceed max size."""
     return jsonify({"error": "File too large. Maximum size is 100MB"}), 413
 
 
 @app.errorhandler(404)
 def not_found(e):
-    """#! Handle 404 errors."""
+    """Handle 404 errors."""
     return jsonify({"error": "Page not found"}), 404
 
 
 @app.errorhandler(500)
 def server_error(e):
-    """#! Handle server errors."""
+    """Handle server errors."""
     return jsonify({"error": "Internal server error"}), 500
 
 
