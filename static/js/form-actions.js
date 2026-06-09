@@ -92,6 +92,26 @@ function downloadFile(b64Data, filename) {
 //* FILE UPLOAD & DOWNLOAD - Server communication
 //* ============================================================================
 
+//* Safely parse JSON responses from the server.
+//* The previous implementation used response.json() directly, which crashes
+//* when the backend returns HTML debug pages or malformed responses.
+async function safeParseJson(response) {
+    const contentType = response.headers.get('content-type') || '';
+    const text = await response.text();
+
+    if (contentType.includes('application/json') || text.trim().startsWith('{') || text.trim().startsWith('[')) {
+        try {
+            return JSON.parse(text);
+        } catch (error) {
+            console.warn('JSON parsing failed for server response:', error);
+            throw new Error(`Invalid JSON response from server. ${error.message}. Response start: ${text.slice(0, 200)}`);
+        }
+    }
+
+    const preview = text.replace(/\s+/g, ' ').trim().slice(0, 300);
+    throw new Error(`Server returned non-JSON response (${response.status}). Response starts with: ${preview}`);
+}
+
 //* Upload files to server for compression/decompression
 async function uploadFiles(endpoint, input, button, resultsContainer, resultsList) {
     //! Validate file selection
@@ -120,11 +140,12 @@ async function uploadFiles(endpoint, input, button, resultsContainer, resultsLis
             body: formData
         });
 
-        const data = await response.json();
+        console.debug('Server response status:', response.status, 'content-type:', response.headers.get('content-type'));
+        const data = await safeParseJson(response);
         console.debug('Received response from server', data);
 
         if (!response.ok) {
-            const message = data?.error || 'Server returned an error while processing files.';
+            const message = data?.error || data?.message || 'Server returned an error while processing files.';
             alert(`Error: ${message}`);
             return;
         }
