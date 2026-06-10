@@ -332,7 +332,15 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
 
 @app.route('/')
 def home():
-    return render_template('index.html')
+    try:
+        return render_template('index.html')
+    except Exception as e:
+        print(traceback.format_exc())
+        app.logger.error('Homepage rendering failed: %s', traceback.format_exc())
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 
 @app.route('/compress', methods=['GET', 'POST'])
