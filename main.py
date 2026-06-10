@@ -283,7 +283,7 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
     start_time = time.monotonic()
     logger.info("Subprocess start %s: cmd=%s cwd=%s timeout=%s", operation, cmd, output_dir, timeout)
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, kill_after=5, cwd=str(output_dir))
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=str(output_dir))
         elapsed = round(time.monotonic() - start_time, 3)
         logger.info("Subprocess end %s: returncode=%s elapsed=%ss", operation, result.returncode, elapsed)
         if result.returncode != 0:
