@@ -26,6 +26,7 @@
 - Converted compress/decompress routes to use shared helper steps.
 - Made `run_compressor()` easier to read with clear operation detection and output resolution.
 - Removed dead helper `safe_decompressed_filename()`.
+ - Shifted analytics responsibilities from Python to the native C++ engine: entropy, SHA-256 hashing, frequency statistics, compression ratios, average bits/symbol, and report JSON generation are now produced by C++ and consumed by Flask.
 
 ## Bug Risks Discovered
 - Fixed the startup verification path to use the existing Python runtime correctly.

@@ -2,13 +2,21 @@
 
 ## Overview
 
+<<<<<<< HEAD
 This project is a web-based Huffman compression system powered by a native C++ computational engine with Flask serving as the lightweight interface and deployment layer.
+=======
+The Huffman File Compression Web Application centers on a native C++ compression engine while Python Flask acts as a lightweight orchestration and web layer. The C++ engine performs the core work (frequency analysis, Huffman tree construction, encoding/decoding, hashing, entropy calculation, header generation, and JSON report output). Flask handles uploads, creates temporary session directories, invokes the C++ binaries as subprocesses, and forwards generated reports and archives to clients.
+>>>>>>> 43f042d (C++ codes increased!)
 
 The application uses compiled C++ for the real Huffman compression and decompression work, while Flask handles uploads, HTTP routing, temporary session directories, JSON responses, and browser download packaging. It is designed for Render/Linux deployment and follows a stateless cloud architecture in which uploads are processed in temporary session directories and cleaned up automatically.
 
+<<<<<<< HEAD
 TXT files are the primary effective evaluation format because Huffman coding performs best on text-like data with repeated symbols and low-to-moderate entropy. Binary formats such as PDF, DOCX, JPG, and MP4 may not compress effectively because they often already contain high entropy, internal compression, or highly random content, which limits the usefulness of prefix-free Huffman coding.
 
 This project remains intentionally simple and academic: Flask handles HTTP, templates, routing, and ZIP packaging, while the compiled C++ engine performs the actual computational work. The Python side is kept lightweight so the system stays easy to deploy on Render/Linux and easy to explain in a research or defense setting.
+=======
+This project is both educational and practical: the C++ engine demonstrates algorithmic implementation and performance considerations while the Flask layer demonstrates safe, stateless web orchestration.
+>>>>>>> 43f042d (C++ codes increased!)
 
 ---
 

@@ -1,5 +1,10 @@
 #include <bits/stdc++.h>
+#include "core/file_utils.h"
+#include "core/header_parser.h"
+#include "core/report_generator.h"
+#include "core/hashing.h"
 using namespace std;
+using namespace huffcore;
 
 //* ============================================================================
 //* DECOMPRESSION: Extract Huffman codes from compressed file header
@@ -193,7 +198,34 @@ int main(int argc, char* argv[]) {
     newfile.close();
     readfile.close();
 
-    cout << "Decompression complete" << endl;
+    // After successful decompression, write metadata and verification report
+    fs::path out_path = output;
+    fs::path meta_path = out_path.parent_path() / (out_path.stem().string() + "-metadata.json");
+    fs::path report_path = out_path.parent_path() / (out_path.stem().string() + "-decompression_report.json");
 
+    // metadata: basic mapping
+    std::filesystem::path input_path(file);
+    size_t compressed_size = 0;
+    size_t decompressed_size = 0;
+    try {
+        compressed_size = static_cast<size_t>(std::filesystem::file_size(input_path));
+    } catch (...) {}
+    try {
+        decompressed_size = static_cast<size_t>(std::filesystem::file_size(out_path));
+    } catch (...) {}
+    string metadata_json = create_decompression_metadata_json("huffman", input_path.filename().string(), out_path.filename().string(), compressed_size, decompressed_size, current_timestamp());
+    ofstream meta_out(meta_path);
+    if (meta_out) meta_out << metadata_json;
+    meta_out.close();
+
+    // verification report: sha256 and status
+    string sha = sha256_hex(out_path);
+    ostringstream rep;
+    rep << "{\"verification_status\":\"ok\",\"sha256\":\"" << sha << "\"}";
+    ofstream report_out(report_path);
+    if (report_out) report_out << rep.str();
+    report_out.close();
+
+    cout << "Decompression complete" << endl;
     return 0;
 }

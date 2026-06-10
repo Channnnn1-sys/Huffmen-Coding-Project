@@ -32,7 +32,7 @@ if [ ! -f "huffdecompress.cpp" ]; then
 fi
 
 echo "Compiling huffcompress..."
-g++ -O3 -std=c++17 -o huffcompress huffcompress.cpp
+g++ -O3 -std=c++17 -o huffcompress huffcompress.cpp core/*.cpp -I.
 if [ $? -eq 0 ]; then
     echo "✓ huffcompress compiled successfully"
 else
@@ -42,7 +42,7 @@ fi
 
 echo
 echo "Compiling huffdecompress..."
-g++ -O3 -std=c++17 -o huffdecompress huffdecompress.cpp
+g++ -O3 -std=c++17 -o huffdecompress huffdecompress.cpp core/*.cpp -I.
 if [ $? -eq 0 ]; then
     echo "✓ huffdecompress compiled successfully"
 else

@@ -1,6 +1,12 @@
 #include <bits/stdc++.h>
 #include <iomanip>
+#include "core/file_utils.h"
+#include "core/huffman_tree.h"
+#include "core/metadata.h"
+#include "core/report_generator.h"
+#include "core/entropy.h"
 using namespace std;
+using namespace huffcore;
 
 //* ============================================================================
 //* HUFFMAN TREE DATA STRUCTURES
@@ -170,8 +176,8 @@ int main(int argc, char* argv[]) {
 
     //* Generate Huffman codes
     Node* root = buildHuffmanTree(pq);
-    array<string, 256> codes;
-    buildCodes(root, string(), codes);
+    array<string, 256> codes_array;
+    buildCodes(root, string(), codes_array);
 
     //* Prepare output filename
     size_t ext_pos = input_path.find_last_of('.');
@@ -187,26 +193,45 @@ int main(int argc, char* argv[]) {
     }
 
     //* Write header and encode file
-    writeHeader(output_file, codes, symbol_used, extension, static_cast<size_t>(unique_symbols), total_bytes);
+    writeHeader(output_file, codes_array, symbol_used, extension, static_cast<size_t>(unique_symbols), total_bytes);
     input_file.clear();
     input_file.seekg(0, ios::beg);
-    encodeFile(input_file, output_file, codes);
+    encodeFile(input_file, output_file, codes_array);
     input_file.close();
     output_file.close();
 
-    //* Calculate and display compression statistics
-    ifstream original_file(input_path, ios::binary | ios::ate);
-    size_t original_size = original_file.tellg();
-    original_file.close();
-    ifstream compressed_file(output_path, ios::binary | ios::ate);
-    size_t compressed_size = compressed_file.tellg();
-    compressed_file.close();
+    //* Calculate and persist compression statistics (metadata and report JSON)
+    // Prepare frequency vector for report
+    vector<size_t> frequencies(256);
+    for (size_t i = 0; i < 256; ++i) frequencies[i] = frequency[i];
 
-    double ratio = (original_size > 0) ? (static_cast<double>(compressed_size) / original_size) * 100.0 : 0.0;
+    // Build codes using helper to get code lengths
+    auto codes = build_huffman_codes(frequencies);
+    auto code_lengths = build_code_lengths(codes);
+
+    // Compute entropy sample (use first 100KB)
+    vector<unsigned char> sample = read_file_bytes(input_path, 100 * 1024);
+    double entropy_value = shannon_entropy(sample);
+
+    // Generate compression report
+    CompressionReport report = generate_compression_report(input_path, output_path, code_lengths, frequencies, entropy_value);
+
+    // Write metadata.json and compression_report.json next to output
+    fs::path meta_path = fs::path(output_path).parent_path() / (fs::path(output_path).stem().string() + "-metadata.json");
+    fs::path report_path = fs::path(output_path).parent_path() / (fs::path(output_path).stem().string() + "-compression_report.json");
+
+    // metadata JSON (basic fields)
+    string metadata_json = create_metadata_json("huffman", fs::path(input_path).filename().string(), fs::path(output_path).filename().string(), report.original_size, report.compressed_size, report.sha256, current_timestamp());
+    ofstream meta_out(meta_path);
+    if (meta_out) meta_out << metadata_json;
+    meta_out.close();
+
+    // detailed report JSON
+    string report_json = report_to_json(report);
+    ofstream report_out(report_path);
+    if (report_out) report_out << report_json;
+    report_out.close();
+
     cout << "Compression complete" << endl;
-    cout << "Original size: " << original_size << " bytes" << endl;
-    cout << "Compressed size: " << compressed_size << " bytes" << endl;
-    cout << "Compression ratio: " << fixed << setprecision(2) << ratio << "%" << endl;
-
     return 0;
 }

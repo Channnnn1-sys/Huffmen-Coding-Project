@@ -9,6 +9,7 @@ import subprocess
 import sys
 import platform
 from pathlib import Path
+import glob
 
 def compile_binaries():
     """#! Compile huffcompress and huffdecompress binaries using g++.
@@ -62,12 +63,16 @@ def compile_binaries():
             continue
         
         print(f"Compiling {source}...")
-        print(f"  Command: g++ -O2 -o {target} {source}")
+        # Expand core/*.cpp into individual file paths
+        core_sources = glob.glob(str(compressor_dir / "core" / "*.cpp"))
+        cmd_display = f"g++ -O2 -o {target} {source} {' '.join(core_sources)} -I."
+        print(f"  Command: {cmd_display}")
         
         try:
             #* Run g++ compiler with optimization flags
+            cmd = ["g++", "-O2", "-o", target, source] + core_sources + ["-I."]
             result = subprocess.run(
-                ["g++", "-O2", "-o", target, source],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=60

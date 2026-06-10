@@ -17,10 +17,10 @@ if [ ! -d "$COMPRESSOR_DIR" ]; then
 fi
 
 echo "Compiling huffcompress..."
-g++ -O3 -std=c++17 -o "$COMPRESSOR_DIR/huffcompress" "$COMPRESSOR_DIR/huffcompress.cpp"
+g++ -O3 -std=c++17 -o "$COMPRESSOR_DIR/huffcompress" "$COMPRESSOR_DIR/huffcompress.cpp" "$COMPRESSOR_DIR/core"/*.cpp -I"$COMPRESSOR_DIR"
 
 echo "Compiling huffdecompress..."
-g++ -O3 -std=c++17 -o "$COMPRESSOR_DIR/huffdecompress" "$COMPRESSOR_DIR/huffdecompress.cpp"
+g++ -O3 -std=c++17 -o "$COMPRESSOR_DIR/huffdecompress" "$COMPRESSOR_DIR/huffdecompress.cpp" "$COMPRESSOR_DIR/core"/*.cpp -I"$COMPRESSOR_DIR"
 
 echo "=========================================="
 echo "Build successful!"

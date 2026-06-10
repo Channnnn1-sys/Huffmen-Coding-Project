@@ -16,6 +16,7 @@ The app is intentionally simple and beginner-friendly.
 - `main.py` contains configuration, utility helpers, Flask routes, error handlers, and startup validation.
 - Uploads are processed in an isolated `tempfile.TemporaryDirectory()` for each request.
 - The Python backend delegates actual Huffman encoding/decoding to compiled C++ executables.
+ - The Python backend delegates actual Huffman encoding/decoding and analytics to compiled C++ executables. The C++ engine now also produces JSON metadata files (`*-metadata.json`, `*-compression_report.json`, `*-decompression_report.json`) that the Flask layer forwards unchanged to clients.
 - Results are returned as base64-encoded ZIP bundles so the browser can download the output without persistent storage.
 
 ## Frontend to Backend Flow

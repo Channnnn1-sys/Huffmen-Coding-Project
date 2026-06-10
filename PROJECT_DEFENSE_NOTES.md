@@ -45,6 +45,7 @@
 - **Utilities**: file extension helpers, entropy computation, ZIP analysis.
 - **Routes**: `/compress`, `/decompress`, `/about`, `/debug`.
 - **Subprocess logic**: `run_compressor()` handles external binary execution.
+ - **Subprocess logic**: `run_compressor()` handles external binary execution. The C++ binaries now also generate verification and analytics JSON files which Flask forwards to clients unchanged.
 - **Startup validation**: `verify_compressor_binaries()` ensures C++ binaries exist.
 
 ### `compressor/huffcompress.cpp`
