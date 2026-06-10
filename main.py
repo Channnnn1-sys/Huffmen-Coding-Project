@@ -343,6 +343,11 @@ def home():
         }), 500
 
 
+@app.route('/about')
+def about():
+    return render_template('about.html')
+
+
 @app.route('/compress', methods=['GET', 'POST'])
 def compress():
     if request.method == 'GET':
