@@ -31,6 +31,11 @@ if [ ! -f "huffdecompress.cpp" ]; then
     exit 1
 fi
 
+# Link each executable against all shared implementation files in compressor/core.
+# The linker errors happened because the project was refactored into multiple
+# .cpp modules, but Render only compiled the main translation units.
+# Compilation turns .cpp into object code; linking resolves all symbols across files.
+
 echo "Compiling huffcompress..."
 g++ -O3 -std=c++17 -o huffcompress huffcompress.cpp core/*.cpp -I.
 if [ $? -eq 0 ]; then

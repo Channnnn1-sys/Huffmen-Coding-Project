@@ -16,6 +16,8 @@ if [ ! -d "$COMPRESSOR_DIR" ]; then
     exit 1
 fi
 
+# Link the main entry point and all shared implementation files.
+# This avoids undefined reference errors from huffcore symbols after refactoring.
 echo "Compiling huffcompress..."
 g++ -O3 -std=c++17 -o "$COMPRESSOR_DIR/huffcompress" "$COMPRESSOR_DIR/huffcompress.cpp" "$COMPRESSOR_DIR/core"/*.cpp -I"$COMPRESSOR_DIR"
 

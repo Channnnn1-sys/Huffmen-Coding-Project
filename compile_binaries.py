@@ -63,14 +63,16 @@ def compile_binaries():
             continue
         
         print(f"Compiling {source}...")
-        # Expand core/*.cpp into individual file paths
+        # Expand core/*.cpp into individual file paths and link shared implementation
+        # modules alongside the main translation unit. This prevents undefined
+        # references to huffcore symbols after the multi-file refactor.
         core_sources = glob.glob(str(compressor_dir / "core" / "*.cpp"))
-        cmd_display = f"g++ -O2 -o {target} {source} {' '.join(core_sources)} -I."
+        cmd_display = f"g++ -O3 -std=c++17 -o {target} {source} {' '.join(core_sources)} -I."
         print(f"  Command: {cmd_display}")
         
         try:
             #* Run g++ compiler with optimization flags
-            cmd = ["g++", "-O2", "-o", target, source] + core_sources + ["-I."]
+            cmd = ["g++", "-O3", "-std=c++17", "-o", target, source] + core_sources + ["-I."]
             result = subprocess.run(
                 cmd,
                 capture_output=True,
