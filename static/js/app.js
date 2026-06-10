@@ -149,7 +149,7 @@ function buildResults(result) {
                 ${entropyHtml}
                 ${deepScanHtml}
                 ${metaHtml}
-                <button class="btn small download-btn" data-b64="${result.data_b64}" data-filename="${result.compressed_filename || result.decompressed_filename}">Download</button>
+                <button class="btn small download-btn" data-download-url="${result.download_url || ''}" data-filename="${result.compressed_filename || result.decompressed_filename}">Download</button>
             </div>
         `;
     } else {
@@ -245,8 +245,15 @@ async function uploadFiles(endpoint, input, button, resultsContainer, resultsLis
         document.querySelectorAll('.download-btn').forEach((btn) => {
             btn.addEventListener('click', (e) => {
                 const target = e.currentTarget;
-                const b64Data = target.dataset.b64;
                 const filename = target.dataset.filename;
+                const downloadUrl = target.dataset.downloadUrl;
+                const b64Data = target.dataset.b64;
+
+                if (downloadUrl) {
+                    window.location.href = downloadUrl;
+                    return;
+                }
+
                 if (b64Data && filename) {
                     downloadFile(b64Data, filename);
                 }

@@ -152,17 +152,16 @@ def run_audit():
         compression_warning = compress_result.get('compression_warning')
         compression_ratio = compress_result.get('compression_ratio')
         compressed_filename = compress_result.get('compressed_filename')
+        download_url = compress_result.get('download_url')
         print('  compress response success=', compress_success)
         print('  compression_warning=', compression_warning)
 
-        if not compress_success:
+        if not compress_success or not download_url or not compressed_filename:
             report_rows.append((filename, False, False, False, original_size, compressed_size, compression_ratio, 'compress_failed'))
             continue
 
-        compressed_zip_b64 = compress_result['data_b64']
-        compressed_zip_bytes = base64.b64decode(compressed_zip_b64)
         compressed_zip_path = TEST_DIR / f'audit-{filename}-compressed.zip'
-        compressed_zip_path.write_bytes(compressed_zip_bytes)
+        compressed_zip_path.write_bytes(urllib.request.urlopen(f'http://{SERVER_HOST}:{SERVER_PORT}{download_url}', timeout=60).read())
 
         body, headers = build_multipart_form(compressed_filename, compressed_zip_bytes, content_type='application/zip')
         try:
@@ -179,13 +178,13 @@ def run_audit():
         print('  decompress response success=', decompress_success)
         print('  integrity_verified=', integrity_verified)
 
-        if not decompress_success:
+        download_url = decompress_result.get('download_url')
+        if not decompress_success or not download_url:
             report_rows.append((filename, True, False, False, original_size, compressed_size, compression_ratio, 'decompress_failed'))
             continue
 
-        output_zip_bytes = base64.b64decode(decompress_result['data_b64'])
         output_zip_path = TEST_DIR / f'audit-{filename}-restored.zip'
-        output_zip_path.write_bytes(output_zip_bytes)
+        output_zip_path.write_bytes(urllib.request.urlopen(f'http://{SERVER_HOST}:{SERVER_PORT}{download_url}', timeout=60).read())
 
         with zipfile.ZipFile(output_zip_path, 'r') as archive:
             members = [m for m in archive.namelist() if m != 'metadata.json']

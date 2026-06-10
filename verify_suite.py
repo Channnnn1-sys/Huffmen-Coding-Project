@@ -70,10 +70,16 @@ for name in tests:
         print('COMPRESS FAILED', resp_json)
         all_ok = False
         continue
-    zip_b64 = resp_json['results'][0]['data_b64']
-    zip_name = resp_json['results'][0]['compressed_filename']
+    download_url = resp_json['results'][0].get('download_url')
+    zip_name = resp_json['results'][0].get('compressed_filename')
+    if not download_url or not zip_name:
+        print('COMPRESS RESPONSE MISSING DOWNLOAD URL OR FILENAME', resp_json)
+        all_ok = False
+        continue
+
     zip_path = root / zip_name
-    zip_path.write_bytes(base64.b64decode(zip_b64))
+    compressed_url = f'http://127.0.0.1:5000{download_url}'
+    zip_path.write_bytes(urllib.request.urlopen(compressed_url, timeout=60).read())
     print('compressed zip', zip_path)
 
     #* Send decompression request
@@ -101,10 +107,16 @@ for name in tests:
         print('DECOMPRESS FAILED', resp_json)
         all_ok = False
         continue
-    out_b64 = resp_json['results'][0]['data_b64']
-    out_name = resp_json['results'][0]['decompressed_filename']
+    download_url = resp_json['results'][0].get('download_url')
+    out_name = resp_json['results'][0].get('decompressed_filename')
+    if not download_url or not out_name:
+        print('DECOMPRESS RESPONSE MISSING DOWNLOAD URL OR FILENAME', resp_json)
+        all_ok = False
+        continue
+
     out_path = root / out_name
-    out_path.write_bytes(base64.b64decode(out_b64))
+    decompressed_url = f'http://127.0.0.1:5000{download_url}'
+    out_path.write_bytes(urllib.request.urlopen(decompressed_url, timeout=60).read())
     print('decompressed zip', out_path)
 
     #! Extract decompressed file and verify integrity

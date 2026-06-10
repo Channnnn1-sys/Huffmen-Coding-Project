@@ -69,6 +69,11 @@ COMPRESSED_SUFFIX = "-compressed.bin"
 BASE_DIR = Path(__file__).parent
 COMPRESSOR_DIR = BASE_DIR / "compressor"
 
+#* Temporary download storage for direct file transfers
+DOWNLOAD_ROOT = Path(os.environ.get("HUFFMAN_DOWNLOAD_DIR", tempfile.gettempdir())) / "huffman_downloads"
+DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+DOWNLOAD_EXPIRATION_SECONDS = 15 * 60  #* downloads expire after 15 minutes
+
 #! Detect platform and set binary names
 def get_compressor_binary(name):
     """Get the path to a compressor binary based on OS.
@@ -373,13 +378,69 @@ def save_uploaded_file(file_storage, target_dir, filename=None):
 def build_response_archive_bytes(content_bytes, inner_filename, archive_name, metadata, target_dir):
     """#* Create a ZIP archive in temporary storage and return its base64 payload.
     
-    #* Combines compressed/decompressed file with metadata.json for easy download.
+    #* This helper is retained for backwards compatibility, but the application
+    #* now prefers direct file downloads to avoid memory pressure.
     """
     archive_path = target_dir / archive_name
     with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(inner_filename, content_bytes)
         archive.writestr('metadata.json', json.dumps(metadata, indent=2))
     return base64.b64encode(archive_path.read_bytes()).decode()
+
+
+def build_response_archive_file(content_path, inner_filename, archive_name, metadata, target_dir):
+    """#* Create a ZIP archive on disk from an existing file.
+
+    Writing the archive to disk avoids loading the full ZIP payload into memory.
+    """
+    archive_path = target_dir / archive_name
+    with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.write(content_path, arcname=inner_filename)
+        archive.writestr('metadata.json', json.dumps(metadata, indent=2))
+    return archive_path
+
+
+def cleanup_expired_downloads():
+    """Remove stale temporary download directories from disk."""
+    now = time.time()
+    for item in DOWNLOAD_ROOT.iterdir():
+        try:
+            if not item.is_dir():
+                continue
+            age = now - item.stat().st_mtime
+            if age > DOWNLOAD_EXPIRATION_SECONDS:
+                logger.info("Removing expired download directory: %s", item)
+                shutil.rmtree(item)
+        except Exception as exc:
+            logger.warning("Failed to cleanup download item %s: %s", item, exc)
+
+
+def create_download_directory():
+    """Create a new clean download directory for a single request."""
+    download_token = uuid4().hex
+    download_dir = DOWNLOAD_ROOT / download_token
+    download_dir.mkdir(parents=True, exist_ok=False)
+    return download_token, download_dir
+
+
+def safe_download_path(token, filename):
+    """Resolve a download path safely and prevent path traversal."""
+    if not re.fullmatch(r'^[A-Za-z0-9_-]+$', token):
+        return None
+
+    safe_filename = secure_filename(filename)
+    if not safe_filename:
+        return None
+
+    download_path = DOWNLOAD_ROOT / token / safe_filename
+    try:
+        download_path = download_path.resolve()
+        if not str(download_path).startswith(str(DOWNLOAD_ROOT.resolve())):
+            return None
+    except Exception:
+        return None
+
+    return download_path
 
 
 def sha256_hash(path):
@@ -709,6 +770,7 @@ def compress():
     if request.method == "GET":
         return render_template("compress.html")
 
+    cleanup_expired_downloads()
     logger.info("POST /compress received request")
     if "files" not in request.files:
         logger.warning("POST /compress missing files field")
@@ -764,50 +826,51 @@ def compress():
                     })
                     continue
 
-                compressed_data = output_file.read_bytes()
-                compressed_size = len(compressed_data)
-                compressed_sha256 = hashlib.sha256(compressed_data).hexdigest()
-                report = create_compression_report(temp_input_path, compressed_size)
+                compressed_sha256 = sha256_hash(output_file)
+                report = create_compression_report(temp_input_path, output_file.stat().st_size)
                 processing_time = (datetime.now() - start_time).total_seconds()
 
                 compression_warning = None
-                if compressed_size > original_size:
+                if output_file.stat().st_size > original_size:
                     compression_warning = (
                         "Compressed output is larger than the original file. "
                         "This usually happens when the input data has high entropy or is already compressed."
                     )
                     logger.warning(
                         "Ineffective compression for %s: original=%s compressed=%s",
-                        filename, original_size, compressed_size
+                        filename, original_size, output_file.stat().st_size
                     )
 
                 zip_name = f"{temp_input_path.stem}-compressed.zip"
-                metadata = build_download_metadata(
-                    "compress",
-                    filename,
-                    output_file.name,
-                    {
-                        "original_size": report["original_size"],
-                        "compressed_size": report["compressed_size"],
-                        "original_sha256": original_sha256,
-                        "compressed_sha256": compressed_sha256,
-                    },
-                    extra={
-                        "compression_warning": compression_warning
-                    }
-                )
-                data_b64 = build_response_archive_bytes(
-                    compressed_data,
+                download_token, download_dir = create_download_directory()
+                archive_path = build_response_archive_file(
+                    output_file,
                     output_file.name,
                     zip_name,
-                    metadata,
-                    temp_session_path
+                    build_download_metadata(
+                        "compress",
+                        filename,
+                        output_file.name,
+                        {
+                            "original_size": report["original_size"],
+                            "compressed_size": report["compressed_size"],
+                            "original_sha256": original_sha256,
+                            "compressed_sha256": compressed_sha256,
+                        },
+                        extra={
+                            "compression_warning": compression_warning
+                        }
+                    ),
+                    download_dir
                 )
+                download_url = url_for('download_file', token=download_token, filename=zip_name)
 
                 results.append({
                     "filename": filename,
                     "success": True,
                     "compressed_filename": zip_name,
+                    "download_url": download_url,
+                    "download_size": archive_path.stat().st_size,
                     "original_size": report["original_size"],
                     "compressed_size": report["compressed_size"],
                     "original_sha256": original_sha256,
@@ -822,8 +885,7 @@ def compress():
                     "top_symbols": report["top_symbols"],
                     "file_type": report["file_type"],
                     "deep_scan": office_scan,
-                    "processing_time_seconds": round(processing_time, 3),
-                    "data_b64": data_b64
+                    "processing_time_seconds": round(processing_time, 3)
                 })
 
             except Exception as exc:
@@ -858,6 +920,7 @@ def decompress():
     if request.method == "GET":
         return render_template("decompress.html")
 
+    cleanup_expired_downloads()
     logger.info("POST /decompress received request")
     if "files" not in request.files:
         logger.warning("POST /decompress missing files field")
@@ -948,9 +1011,8 @@ def decompress():
                 logger.info("Decompress completed. Output file: %s", output_file)
                 logger.info("Temporary session contents after decompression: %s", [p.name for p in temp_session_path.iterdir()])
 
-                decompressed_data = output_file.read_bytes()
                 compressed_size = temp_input_path.stat().st_size
-                decompressed_size = len(decompressed_data)
+                decompressed_size = output_file.stat().st_size
                 decompressed_sha256 = sha256_hash(output_file)
 
                 header_info, header_error = read_compressed_header(temp_input_path)
@@ -975,43 +1037,45 @@ def decompress():
                     integrity_verified = False
 
                 zip_name = f"{output_file.stem}.zip"
-                metadata = build_download_metadata(
-                    "decompress",
-                    filename,
-                    output_file.name,
-                    {
-                        "compressed_size": compressed_size,
-                        "decompressed_size": decompressed_size,
-                        "original_sha256": upload_metadata.get('original_sha256') if upload_metadata else None,
-                        "compressed_sha256": upload_metadata.get('compressed_sha256') if upload_metadata else None,
-                        "decompressed_sha256": decompressed_sha256,
-                    },
-                    extra={
-                        'integrity_verified': integrity_verified,
-                        'header_verified': header_verified,
-                        'header_expected_chars': header_info['expected_chars'] if header_info else None,
-                        'header_extension': header_info['extension'] if header_info else None,
-                    }
-                )
-                data_b64 = build_response_archive_bytes(
-                    decompressed_data,
+                download_token, download_dir = create_download_directory()
+                archive_path = build_response_archive_file(
+                    output_file,
                     output_file.name,
                     zip_name,
-                    metadata,
-                    temp_session_path
+                    build_download_metadata(
+                        "decompress",
+                        filename,
+                        output_file.name,
+                        {
+                            "compressed_size": compressed_size,
+                            "decompressed_size": decompressed_size,
+                            "original_sha256": upload_metadata.get('original_sha256') if upload_metadata else None,
+                            "compressed_sha256": upload_metadata.get('compressed_sha256') if upload_metadata else None,
+                            "decompressed_sha256": decompressed_sha256,
+                        },
+                        extra={
+                            'integrity_verified': integrity_verified,
+                            'header_verified': header_verified,
+                            'header_expected_chars': header_info['expected_chars'] if header_info else None,
+                            'header_extension': header_info['extension'] if header_info else None,
+                        }
+                    ),
+                    download_dir
                 )
+                download_url = url_for('download_file', token=download_token, filename=zip_name)
 
                 results.append({
                     "filename": filename,
                     "success": True,
                     "decompressed_filename": zip_name,
+                    "download_url": download_url,
+                    "download_size": archive_path.stat().st_size,
                     "compressed_size": compressed_size,
                     "decompressed_size": decompressed_size,
                     "decompressed_sha256": decompressed_sha256,
                     "integrity_verified": integrity_verified,
                     "header_verified": header_verified,
-                    "processing_time_seconds": round(processing_time, 3),
-                    "data_b64": data_b64
+                    "processing_time_seconds": round(processing_time, 3)
                 })
 
             except Exception as exc:
@@ -1027,6 +1091,29 @@ def decompress():
         "results": results,
         "timestamp": datetime.now().isoformat()
     })
+
+
+@app.route("/download/<token>/<path:filename>")
+def download_file(token, filename):
+    """Serve temporary ZIP download files directly.
+
+    This endpoint keeps the download transfer separate from the JSON API.
+    It validates the token and filename, serves the file with an attachment header,
+    and avoids loading the entire payload into server memory.
+    """
+    cleanup_expired_downloads()
+    download_path = safe_download_path(token, filename)
+    if not download_path or not download_path.exists() or not download_path.is_file():
+        logger.warning("Download request failed for token=%s filename=%s", token, filename)
+        abort(404)
+
+    logger.info("Serving download file: %s", download_path)
+    return send_file(
+        str(download_path),
+        as_attachment=True,
+        download_name=download_path.name,
+        mimetype='application/zip'
+    )
 
 
 @app.route("/about")
