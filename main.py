@@ -125,6 +125,35 @@ def safe_download_path(token, filename):
         return None
 
 
+def log_directory_listing(path, context):
+    try:
+        entries = [child.name for child in path.iterdir()]
+        logger.warning("%s contents: %s", context, entries)
+    except Exception as exc:
+        logger.warning("Failed to list %s: %s", context, exc)
+
+
+def api_error_response(message, status=500):
+    return jsonify({'error': message}), status
+
+
+@app.before_request
+def log_request_start():
+    request_id = uuid4().hex[:8]
+    request.environ['request_id'] = request_id
+    logger.info("REQUEST START %s %s %s content_length=%s", request_id, request.method, request.path, request.content_length)
+    if request.method == 'POST' and request.files:
+        filenames = [secure_filename(upload.filename) for upload in request.files.getlist('files') if upload.filename]
+        logger.info("REQUEST FILES %s %s", request_id, filenames)
+
+
+@app.after_request
+def log_request_end(response):
+    request_id = request.environ.get('request_id', 'unknown')
+    logger.info("REQUEST END %s %s %s %s", request_id, request.method, request.path, response.status)
+    return response
+
+
 def extract_compressed_bin_from_zip(zip_path, target_dir):
     try:
         with zipfile.ZipFile(zip_path, 'r') as archive:
@@ -166,8 +195,10 @@ def find_subprocess_output(output_dir, expected_prefix):
 
 def maybe_timeout_for_size(filesize):
     if filesize > 50 * 1024 * 1024:
+        logger.warning("Large upload detected: %s bytes; using extended timeout", filesize)
         return 120
     if filesize > 10 * 1024 * 1024:
+        logger.warning("Medium upload detected: %s bytes; using longer timeout", filesize)
         return 60
     return 30
 
@@ -175,23 +206,34 @@ def maybe_timeout_for_size(filesize):
 def run_compressor(input_file, exe_path, output_dir, timeout=30):
     operation = 'compress' if exe_path.name.lower().startswith('huffcompress') else 'decompress'
     if not exe_path.exists() or not exe_path.is_file():
+        logger.error("Binary missing for %s: %s", operation, exe_path)
         return False, None, f"Compressor binary not found at: {exe_path}"
     if not input_file.exists():
+        logger.error("Input file missing for %s: %s", operation, input_file)
         return False, None, f"Input file not found: {input_file}"
     if platform.system() != 'Windows':
         try:
             os.chmod(exe_path, 0o755)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Could not chmod executable %s: %s", exe_path, exc)
+    cmd = [str(exe_path), str(input_file)]
+    start_time = time.monotonic()
+    logger.info("Subprocess start %s: cmd=%s cwd=%s timeout=%s", operation, cmd, output_dir, timeout)
     try:
-        result = subprocess.run([str(exe_path), str(input_file)], capture_output=True, text=True, timeout=timeout, cwd=str(output_dir))
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, kill_after=5, cwd=str(output_dir))
+        elapsed = round(time.monotonic() - start_time, 3)
+        logger.info("Subprocess end %s: returncode=%s elapsed=%ss", operation, result.returncode, elapsed)
         if result.returncode != 0:
+            logger.warning("Subprocess %s failed returncode=%s stdout=%s stderr=%s", operation, result.returncode, result.stdout.strip(), result.stderr.strip())
+            log_directory_listing(output_dir, f"{operation} output directory")
             return False, None, (result.stderr.strip() or result.stdout.strip() or 'Unknown error')
         if operation == 'compress':
             expected = output_dir / f"{input_file.stem}-compressed.bin"
             if not expected.exists():
                 expected, err = find_subprocess_output(output_dir, f"{input_file.stem}-compressed")
                 if err:
+                    logger.warning("Compression output discovery failed: %s", err)
+                    log_directory_listing(output_dir, "Compression output directory")
                     return False, None, err
         else:
             base_name = input_file.stem.replace('-compressed', '')
@@ -204,15 +246,24 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
             if expected is None and candidates:
                 expected = candidates[0]
             if expected is None:
+                logger.warning("Decompressed output not found for %s", input_file.name)
+                log_directory_listing(output_dir, "Decompression output directory")
                 return False, None, f"Decompressed output not found for {input_file.name}"
         if not expected or not expected.exists() or expected.stat().st_size == 0:
+            logger.warning("Output missing or empty after %s: %s", operation, expected)
+            log_directory_listing(output_dir, f"{operation} expected output directory")
             return False, None, f"Output missing or empty: {expected}"
         return True, expected, None
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        logger.warning("Subprocess timeout %s after %s seconds", operation, timeout)
+        log_directory_listing(output_dir, f"{operation} timeout output directory")
         return False, None, f"Timeout after {timeout} seconds"
     except FileNotFoundError as exc:
+        logger.exception("Executable not found: %s", exe_path)
         return False, None, f"Executable not found: {exc}"
     except Exception as exc:
+        logger.exception("Unexpected subprocess error for %s", operation)
+        log_directory_listing(output_dir, f"{operation} exception output directory")
         return False, None, f"Unexpected error: {exc}"
 
 
@@ -240,8 +291,15 @@ def compress():
                 continue
             filename = secure_filename(upload.filename)
             try:
+                upload_size = getattr(upload, 'content_length', None)
+                if upload_size and upload_size > app.config['MAX_CONTENT_LENGTH']:
+                    results.append({'filename': filename, 'success': False, 'error': 'Upload exceeds allowed size'})
+                    continue
                 start_time = datetime.now()
                 input_path = save_uploaded_file(upload, session_path, filename)
+                if input_path.stat().st_size > app.config['MAX_CONTENT_LENGTH']:
+                    results.append({'filename': filename, 'success': False, 'error': 'Upload exceeds allowed size'})
+                    continue
                 timeout = maybe_timeout_for_size(input_path.stat().st_size)
                 success, output_path, error = run_compressor(input_path, COMPRESS_EXE, session_path, timeout=timeout)
                 if not success:
@@ -296,8 +354,15 @@ def decompress():
                 continue
             filename = secure_filename(upload.filename)
             try:
+                upload_size = getattr(upload, 'content_length', None)
+                if upload_size and upload_size > app.config['MAX_CONTENT_LENGTH']:
+                    results.append({'filename': filename, 'success': False, 'error': 'Upload exceeds allowed size'})
+                    continue
                 start_time = datetime.now()
                 upload_path = save_uploaded_file(upload, session_path, filename)
+                if upload_path.stat().st_size > app.config['MAX_CONTENT_LENGTH']:
+                    results.append({'filename': filename, 'success': False, 'error': 'Upload exceeds allowed size'})
+                    continue
                 if upload_path.suffix.lower() == '.zip':
                     input_path, extract_error = extract_compressed_bin_from_zip(upload_path, session_path)
                     if extract_error:
@@ -342,8 +407,13 @@ def download_file(token, filename):
     cleanup_expired_downloads()
     download_path = safe_download_path(token, filename)
     if not download_path or not download_path.exists() or not download_path.is_file():
-        abort(404)
-    return send_file(str(download_path), as_attachment=True, download_name=download_path.name, mimetype='application/zip')
+        logger.warning('Download file not found: token=%s filename=%s', token, filename)
+        return api_error_response('Download file not found', 404)
+    try:
+        return send_file(str(download_path), as_attachment=True, download_name=download_path.name, mimetype='application/zip')
+    except Exception as exc:
+        logger.exception('Download failed for %s/%s', token, filename)
+        return api_error_response('Download failed', 500)
 
 
 @app.route('/debug')
@@ -366,8 +436,9 @@ def not_found(e):
     return jsonify({'error': 'Page not found'}), 404
 
 
-@app.errorhandler(500)
-def server_error(e):
+@app.errorhandler(Exception)
+def handle_unexpected_error(e):
+    logger.exception('Unhandled exception during request %s %s', request.method, request.path)
     return jsonify({'error': 'Internal server error'}), 500
 
 
