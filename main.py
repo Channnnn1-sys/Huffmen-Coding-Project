@@ -13,6 +13,7 @@ import platform
 import re
 import subprocess
 import tempfile
+import traceback
 import zipfile
 import time
 import shutil
@@ -135,6 +136,64 @@ def log_directory_listing(path, context):
 
 def api_error_response(message, status=500):
     return jsonify({'error': message}), status
+
+
+def startup_diagnostics():
+    logger.info("BASE_DIR=%s", BASE_DIR)
+    logger.info("COMPRESSOR_DIR=%s", COMPRESSOR_DIR)
+    logger.info("COMPRESS_EXE=%s", COMPRESS_EXE)
+    logger.info("DECOMPRESS_EXE=%s", DECOMPRESS_EXE)
+    logger.info("cwd=%s", Path.cwd())
+    logger.info("platform=%s", platform.platform())
+    logger.info("system=%s", platform.system())
+    logger.info("machine=%s", platform.machine())
+    for exe, name in ((COMPRESS_EXE, 'compress'), (DECOMPRESS_EXE, 'decompress')):
+        try:
+            exists = exe.exists()
+            is_file = exe.is_file()
+            mode = oct(exe.stat().st_mode) if exists else 'n/a'
+            executable = os.access(exe, os.X_OK) if exists else False
+            logger.info("%s exists=%s is_file=%s executable=%s mode=%s", name.upper(), exists, is_file, executable, mode)
+        except Exception as exc:
+            logger.exception("Failed to inspect %s", exe)
+
+
+def verify_compressor_binaries():
+    logger.info("Verifying compressor binaries")
+    missing = []
+    for exe, name in ((COMPRESS_EXE, 'huffcompress'), (DECOMPRESS_EXE, 'huffdecompress')):
+        try:
+            if not exe.exists() or not exe.is_file():
+                missing.append(str(exe))
+                logger.error("Missing binary %s at %s", name, exe)
+                continue
+            if platform.system() != 'Windows' and not os.access(exe, os.X_OK):
+                logger.warning("Binary not executable, attempting chmod: %s", exe)
+                try:
+                    os.chmod(exe, 0o755)
+                except Exception as exc:
+                    logger.exception("Failed to chmod %s", exe)
+        except Exception:
+            logger.error("Exception while verifying %s", exe)
+            logger.error(traceback.format_exc())
+            raise
+    if missing:
+        raise FileNotFoundError(f"Required compressor binaries missing: {', '.join(missing)}")
+
+
+def initialize_startup():
+    startup_diagnostics()
+    verify_compressor_binaries()
+    logger.info("Route initialization complete")
+
+
+def safe_runner(func, *args, **kwargs):
+    try:
+        return func(*args, **kwargs)
+    except Exception:
+        logger.error("Startup exception in %s", func.__name__)
+        logger.error(traceback.format_exc())
+        raise
 
 
 @app.before_request
@@ -426,6 +485,18 @@ def debug():
     })
 
 
+@app.route('/health')
+def health():
+    return {
+        'status': 'ok',
+        'cwd': str(Path.cwd()),
+        'compress_exists': COMPRESS_EXE.exists(),
+        'decompress_exists': DECOMPRESS_EXE.exists(),
+        'compress_path': str(COMPRESS_EXE),
+        'decompress_path': str(DECOMPRESS_EXE),
+    }
+
+
 @app.errorhandler(413)
 def too_large(e):
     return jsonify({'error': 'File too large. Maximum size is 100MB'}), 413
@@ -443,7 +514,14 @@ def handle_unexpected_error(e):
 
 
 if __name__ == '__main__':
-    if not COMPRESS_EXE.exists() or not DECOMPRESS_EXE.exists():
-        logger.error('Compressor binaries missing. Build the C++ binaries first.')
+    try:
+        safe_runner(initialize_startup)
+    except Exception:
+        logger.error('Application startup failed. Exiting.')
         raise SystemExit(1)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    try:
+        app.run(debug=True, host='0.0.0.0', port=5000)
+    except Exception:
+        logger.error('Flask startup failed')
+        logger.error(traceback.format_exc())
+        raise SystemExit(1)
