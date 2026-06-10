@@ -326,9 +326,31 @@ def run_compressor(input_file, exe_path, output_dir, timeout=30):
         return False, None, f"Unexpected error: {exc}"
 
 
+@app.route('/ping')
+def ping():
+    return 'pong'
+
+
 @app.route('/')
 def home():
-    return render_template('index.html')
+    try:
+        logger.info('Rendering homepage template: index.html')
+        logger.info('cwd=%s', Path.cwd())
+        try:
+            templates_dir = BASE_DIR / 'templates'
+            entries = [child.name for child in templates_dir.iterdir()]
+            logger.info('templates directory contents: %s', entries)
+        except Exception as exc:
+            logger.warning('Failed to list templates directory: %s', exc)
+        return render_template('index.html')
+    except Exception as e:
+        logger.error('Homepage rendering failed: %s', e)
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'route': '/',
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 
 @app.route('/compress', methods=['GET', 'POST'])
