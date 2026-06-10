@@ -37,7 +37,7 @@ DOWNLOAD_ROOT = Path(os.environ.get("HUFFMAN_DOWNLOAD_DIR", tempfile.gettempdir(
 DOWNLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 DOWNLOAD_EXPIRATION_SECONDS = 15 * 60
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder=str(BASE_DIR / 'templates'))
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-key-change-in-production")
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 
@@ -53,6 +53,10 @@ def get_compressor_binary(name):
 
 COMPRESS_EXE = get_compressor_binary("compress")
 DECOMPRESS_EXE = get_compressor_binary("decompress")
+
+app = Flask(__name__, template_folder=str(BASE_DIR / 'templates'))
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-key-change-in-production")
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 
 
 def safe_compressed_filename(filename):
