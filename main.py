@@ -382,28 +382,86 @@ def build_response_archive_bytes(content_bytes, inner_filename, archive_name, me
     return base64.b64encode(archive_path.read_bytes()).decode()
 
 
-def build_download_metadata(operation, original_name, output_name, size_info):
-    """Return the metadata dictionary used for downloadable ZIP results."""
-    if operation == "compress":
-        return {
-            "algorithm": "huffman",
-            "operation": "compress",
-            "original_filename": original_name,
-            "compressed_filename": output_name,
-            "original_size": size_info.get("original_size", 0),
-            "compressed_size": size_info.get("compressed_size", 0),
-            "timestamp": datetime.now().isoformat(),
-        }
+def sha256_hash(path):
+    """#* Compute the SHA-256 hash of a file."""
+    hasher = hashlib.sha256()
+    with open(path, 'rb') as f:
+        while True:
+            chunk = f.read(8192)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
-    return {
-        "algorithm": "huffman",
-        "operation": "decompress",
-        "original_compressed": original_name,
-        "decompressed_filename": output_name,
-        "compressed_size": size_info.get("compressed_size", 0),
-        "decompressed_size": size_info.get("decompressed_size", 0),
-        "timestamp": datetime.now().isoformat(),
-    }
+
+def read_compressed_header(compressed_path):
+    """Read Huffman compressed header fields for validation."""
+    try:
+        with open(compressed_path, 'rb') as f:
+            magic = f.read(4)
+            if magic != b'HUFF':
+                return None, 'Invalid compressed file magic header.'
+
+            version = f.read(1)
+            if not version or version[0] != 1:
+                return None, 'Unsupported compressed file version.'
+
+            raw_symbols = f.read(4)
+            raw_chars = f.read(4)
+            if len(raw_symbols) != 4 or len(raw_chars) != 4:
+                return None, 'Incomplete compressed file header.'
+
+            unique_symbols = int.from_bytes(raw_symbols, 'little', signed=True)
+            expected_chars = int.from_bytes(raw_chars, 'little', signed=True)
+
+            ext_len_bytes = f.read(1)
+            if len(ext_len_bytes) != 1:
+                return None, 'Missing extension byte in compressed header.'
+
+            ext_len = ext_len_bytes[0]
+            extension = f.read(ext_len).decode('utf-8', errors='replace') if ext_len else ''
+
+            if unique_symbols < 0 or unique_symbols > 256 or expected_chars < 0:
+                return None, 'Invalid compressed header values.'
+
+            return {
+                'unique_symbols': unique_symbols,
+                'expected_chars': expected_chars,
+                'extension': extension,
+            }, None
+    except Exception as exc:
+        return None, f'Failed to read compressed header: {exc}'
+
+
+def build_download_metadata(operation, original_name, output_name, size_info, extra=None):
+    """Return the metadata dictionary used for downloadable ZIP results."""
+    if operation == 'compress':
+        metadata = {
+            'algorithm': 'huffman',
+            'operation': 'compress',
+            'original_filename': original_name,
+            'compressed_filename': output_name,
+            'original_size': size_info.get('original_size', 0),
+            'compressed_size': size_info.get('compressed_size', 0),
+            'original_sha256': size_info.get('original_sha256'),
+            'compressed_sha256': size_info.get('compressed_sha256'),
+            'timestamp': datetime.now().isoformat(),
+        }
+    else:
+        metadata = {
+            'algorithm': 'huffman',
+            'operation': 'decompress',
+            'original_compressed': original_name,
+            'decompressed_filename': output_name,
+            'compressed_size': size_info.get('compressed_size', 0),
+            'decompressed_size': size_info.get('decompressed_size', 0),
+            'original_sha256': size_info.get('original_sha256'),
+            'compressed_sha256': size_info.get('compressed_sha256'),
+            'timestamp': datetime.now().isoformat(),
+        }
+    if extra:
+        metadata.update(extra)
+    return metadata
 
 
 def is_safe_zip_member(info):
@@ -424,11 +482,12 @@ def is_safe_zip_member(info):
 
 
 def extract_compressed_bin_from_zip(zip_path, target_dir):
-    """#* Safely extract a single compressed binary from an uploaded ZIP.
+    """#* Safely extract a single compressed binary and optional metadata from an uploaded ZIP.
 
-    Returns a tuple of (Path or None, error_message or None).
+    Returns a tuple of (Path or None, metadata dict or None, error_message or None).
     """
     logger.info("Extracting compressed .bin from ZIP: %s", zip_path)
+    extracted_metadata = None
     try:
         with zipfile.ZipFile(zip_path, 'r') as archive:
             members = archive.infolist()
@@ -441,11 +500,21 @@ def extract_compressed_bin_from_zip(zip_path, target_dir):
                 if not is_safe_zip_member(info):
                     error_msg = f"ZIP contains unsafe path entry: {info.filename}"
                     logger.error(error_msg)
-                    return None, error_msg
+                    return None, None, error_msg
 
-                candidate_name = Path(info.filename).name
-                if candidate_name.endswith('-compressed.bin') or candidate_name.lower().endswith('.bin'):
-                    safe_name = secure_filename(candidate_name)
+                normalized_name = Path(info.filename).name
+                if normalized_name == 'metadata.json':
+                    try:
+                        with archive.open(info, 'r') as source:
+                            extracted_metadata = json.loads(source.read().decode('utf-8'))
+                            logger.info("Loaded metadata.json from ZIP: %s", extracted_metadata)
+                    except Exception as err:
+                        logger.warning("Failed to read metadata.json from ZIP: %s", err)
+                        extracted_metadata = None
+                    continue
+
+                if normalized_name.endswith('-compressed.bin') or normalized_name.lower().endswith('.bin'):
+                    safe_name = secure_filename(normalized_name)
                     if not safe_name:
                         logger.warning("Skipping unsafe candidate name in ZIP: %s", info.filename)
                         continue
@@ -454,7 +523,7 @@ def extract_compressed_bin_from_zip(zip_path, target_dir):
             if not candidates:
                 error_msg = "No supported compressed .bin file found inside uploaded ZIP."
                 logger.error(error_msg)
-                return None, error_msg
+                return None, None, error_msg
 
             if len(candidates) > 1:
                 names = [safe_name for _, safe_name in candidates]
@@ -464,7 +533,7 @@ def extract_compressed_bin_from_zip(zip_path, target_dir):
                     + ". Please upload a ZIP package generated by this tool with a single compressed file."
                 )
                 logger.error(error_msg)
-                return None, error_msg
+                return None, None, error_msg
 
             info, safe_name = candidates[0]
             extracted_path = target_dir / safe_name
@@ -475,18 +544,18 @@ def extract_compressed_bin_from_zip(zip_path, target_dir):
             if not extracted_path.exists() or extracted_path.stat().st_size == 0:
                 error_msg = "Extracted compressed file is empty or could not be created."
                 logger.error(error_msg)
-                return None, error_msg
+                return None, None, error_msg
 
             logger.info("Extracted compressed binary to: %s", extracted_path)
-            return extracted_path, None
+            return extracted_path, extracted_metadata, None
     except zipfile.BadZipFile:
         error_msg = "Invalid ZIP archive."
         logger.error("Invalid ZIP archive: %s", zip_path)
-        return None, error_msg
+        return None, None, error_msg
     except Exception as exc:
         error_msg = f"Failed to extract ZIP contents: {exc}"
         logger.exception(error_msg)
-        return None, error_msg
+        return None, None, error_msg
 
 
 def find_subprocess_output(output_dir, expected_prefix):
@@ -674,6 +743,7 @@ def compress():
                 temp_input_path = save_uploaded_file(uploaded_file, temp_session_path, filename)
 
                 original_size = temp_input_path.stat().st_size
+                original_sha256 = sha256_hash(temp_input_path)
                 entropy_value = compute_entropy(sample_file_bytes(temp_input_path))
                 entropy_warning = make_entropy_warning(filename, entropy_value)
                 office_scan = analyze_office_archive(temp_input_path)
@@ -695,8 +765,21 @@ def compress():
                     continue
 
                 compressed_data = output_file.read_bytes()
-                report = create_compression_report(temp_input_path, len(compressed_data))
+                compressed_size = len(compressed_data)
+                compressed_sha256 = hashlib.sha256(compressed_data).hexdigest()
+                report = create_compression_report(temp_input_path, compressed_size)
                 processing_time = (datetime.now() - start_time).total_seconds()
+
+                compression_warning = None
+                if compressed_size > original_size:
+                    compression_warning = (
+                        "Compressed output is larger than the original file. "
+                        "This usually happens when the input data has high entropy or is already compressed."
+                    )
+                    logger.warning(
+                        "Ineffective compression for %s: original=%s compressed=%s",
+                        filename, original_size, compressed_size
+                    )
 
                 zip_name = f"{temp_input_path.stem}-compressed.zip"
                 metadata = build_download_metadata(
@@ -706,7 +789,12 @@ def compress():
                     {
                         "original_size": report["original_size"],
                         "compressed_size": report["compressed_size"],
+                        "original_sha256": original_sha256,
+                        "compressed_sha256": compressed_sha256,
                     },
+                    extra={
+                        "compression_warning": compression_warning
+                    }
                 )
                 data_b64 = build_response_archive_bytes(
                     compressed_data,
@@ -722,10 +810,13 @@ def compress():
                     "compressed_filename": zip_name,
                     "original_size": report["original_size"],
                     "compressed_size": report["compressed_size"],
+                    "original_sha256": original_sha256,
+                    "compressed_sha256": compressed_sha256,
                     "compression_ratio": report["compression_ratio"],
                     "saved_bytes": report["saved_bytes"],
                     "entropy": report["entropy"],
                     "entropy_warning": report["entropy_warning"] or entropy_warning,
+                    "compression_warning": compression_warning,
                     "average_bits_per_symbol": report["average_bits_per_symbol"],
                     "efficiency_vs_8bit": report["efficiency_vs_8bit"],
                     "top_symbols": report["top_symbols"],
@@ -802,8 +893,9 @@ def decompress():
                 start_time = datetime.now()
                 temp_upload_path = save_uploaded_file(uploaded_file, temp_session_path, filename)
 
+                upload_metadata = None
                 if get_extension(filename) == 'zip':
-                    temp_input_path, extract_error = extract_compressed_bin_from_zip(temp_upload_path, temp_session_path)
+                    temp_input_path, upload_metadata, extract_error = extract_compressed_bin_from_zip(temp_upload_path, temp_session_path)
                     if extract_error:
                         results.append({
                             "filename": filename,
@@ -859,7 +951,28 @@ def decompress():
                 decompressed_data = output_file.read_bytes()
                 compressed_size = temp_input_path.stat().st_size
                 decompressed_size = len(decompressed_data)
-                processing_time = (datetime.now() - start_time).total_seconds()
+                decompressed_sha256 = sha256_hash(output_file)
+
+                header_info, header_error = read_compressed_header(temp_input_path)
+                header_verified = None
+                if header_info is not None:
+                    header_verified = decompressed_size == header_info['expected_chars']
+                    logger.info(
+                        "Compressed file header expected chars=%s, decompressed size=%s, header_verified=%s",
+                        header_info['expected_chars'], decompressed_size, header_verified
+                    )
+                elif header_error:
+                    logger.warning("Compressed header validation failed: %s", header_error)
+
+                integrity_verified = None
+                if upload_metadata and upload_metadata.get('original_sha256'):
+                    integrity_verified = upload_metadata['original_sha256'] == decompressed_sha256
+                    logger.info(
+                        "Integrity hash comparison: expected=%s restored=%s verified=%s",
+                        upload_metadata['original_sha256'], decompressed_sha256, integrity_verified
+                    )
+                elif header_verified is False:
+                    integrity_verified = False
 
                 zip_name = f"{output_file.stem}.zip"
                 metadata = build_download_metadata(
@@ -869,7 +982,16 @@ def decompress():
                     {
                         "compressed_size": compressed_size,
                         "decompressed_size": decompressed_size,
+                        "original_sha256": upload_metadata.get('original_sha256') if upload_metadata else None,
+                        "compressed_sha256": upload_metadata.get('compressed_sha256') if upload_metadata else None,
+                        "decompressed_sha256": decompressed_sha256,
                     },
+                    extra={
+                        'integrity_verified': integrity_verified,
+                        'header_verified': header_verified,
+                        'header_expected_chars': header_info['expected_chars'] if header_info else None,
+                        'header_extension': header_info['extension'] if header_info else None,
+                    }
                 )
                 data_b64 = build_response_archive_bytes(
                     decompressed_data,
@@ -885,6 +1007,9 @@ def decompress():
                     "decompressed_filename": zip_name,
                     "compressed_size": compressed_size,
                     "decompressed_size": decompressed_size,
+                    "decompressed_sha256": decompressed_sha256,
+                    "integrity_verified": integrity_verified,
+                    "header_verified": header_verified,
                     "processing_time_seconds": round(processing_time, 3),
                     "data_b64": data_b64
                 })
