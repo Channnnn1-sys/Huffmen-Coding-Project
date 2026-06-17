@@ -90,7 +90,7 @@ jobs:
       if: matrix.build-mode == 'manual'
       shell: bash
       run: |
-        g++ -std=c++17 -o huffman *.cpp
+        chmod +x compile_linux.sh && ./compile_linux.sh && pip install -r requirements.txt
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4
